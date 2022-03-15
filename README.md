@@ -1,12 +1,45 @@
-# 使用方法
+<div align="center">
 
-## 安装
+<h1>🚄 BMTrain</h1>
+
+------
+
+<p align="center">
+
+<a href='https://bmtrain.readthedocs.io/en/latest/?badge=latest'>
+    <img src='https://readthedocs.org/projects/bmtrain/badge/?version=latest' alt='Documentation Status' />
+</a>
+
+<a href="https://github.com/OpenBMB/BMTrain/releases">
+    <img alt="GitHub release (latest by date including pre-releases)" src="https://img.shields.io/github/v/release/OpenBMB/BMTrain?include_prereleases">
+</a>
+
+<a href="https://github.com/OpenBMB/BMTrain/blob/main/LICENSE">
+    <img alt="GitHub" src="https://img.shields.io/github/license/OpenBMB/BMTrain">
+</a>
+
+</p>
+
+</div>
+
+
+## 1. 安装
+
+#### From PyPI (recommended)
+
+```shell
+$ pip install bmtrain
+```
+
+#### From source
 
 ```
-python3 setup.py install
+$ git clone https://github.com/OpenBMB/BMTrain.git
+$ cd BMTrain
+$ python setup.py install
 ```
 
-## 使用
+## 2. 使用
 
 ### Step 1: 启用 bmtrain
 
@@ -146,9 +179,9 @@ $ torchrun --nnodes=${NNODES} --nproc_per_node=${GPU_PER_NODE} --rdzv_id=1 --rdz
 
 更多信息请参考pytorch官方文档：![Launch utility](https://pytorch.org/docs/stable/distributed.html#launch-utility)
 
-# 注意
+## 3. 其它说明
 
-请使用`bmtrain.inspect`模块来访问模型的参数和运算的中间变量以获取正确的结果。
+`BMTrain`工具包对pytorch进行了底层修改，如果你的程序输出了意料之外的结果，可以在issue中提交相关信息。
 
 更多例子请参考 *examples* 文件夹。
 
