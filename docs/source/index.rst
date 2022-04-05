@@ -3,9 +3,9 @@
    You can adapt this file completely to your liking, but it should at least
    contain the root `toctree` directive.
 
-欢迎使用bmtrain！ 
+欢迎使用BMTrain！ 
 
-BMTrain (Big Model training) 是一个用于大规模预训练语言模型（Pretrained Language Models, PLM）训练阶段的低资源工具包。
+BMTrain 是一个高效的大模型训练工具包，可以用于训练数百亿参数的大模型。BMTrain 可以在分布式训练模型的同时，能够保持代码的简洁性。
 
 =======================================
 
