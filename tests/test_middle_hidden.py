@@ -187,10 +187,12 @@ def test_main():
     ret.append( run("zero", Model_ZERO) )
     ret.append( run("pipe", Model_PIPE) )
     for r in ret:
-        bmt.prnit_rank(r)
+        bmt.print_rank(r)
     for r in ret:
         for r2 in ret:
             assert_eq(r, r2)
 
 if __name__ == "__main__":
     bmt.init_distributed(pipe_size=4)
+
+    test_main()
