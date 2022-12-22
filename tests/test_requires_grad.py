@@ -4,6 +4,7 @@ import bmtrain as bmt
 import torch
 from bmtrain import config
 from bmtrain.block_layer import CheckpointBlockContext,  CheckpointBlock, TransformerBlockList
+from bmtrain.pipe_layer import PipelineTransformerBlockList
 from typing import List
 import torch.nn.functional as F
 
@@ -67,7 +68,36 @@ def test_main():
     assert_neq(sm2.split('\n')[1], sm3.split('\n')[1])
     assert_eq(sm2.split('\n')[2], sm3.split('\n')[2])
 
+def test_main_pipe():
+    a = Linear(256, 256)
+    b = Linear(256, 256)
+    m = PipelineTransformerBlockList([CheckpointBlock(a), CheckpointBlock(b)])
+    bmt.init_parameters(m)
+
+    a.bias.requires_grad_(False)
+    awg, abg, sm1 = run(m, a, b)
+    print(awg, abg, sm1)
+    assert_eq((awg, abg), (False, True))
+    assert_eq(sm1.split('\n')[2].split()[-2:], ["0.0000", "0.0000"])
+
+    a.weight.requires_grad_(False)
+    a.bias.requires_grad_(True)
+    awg, abg, sm2 = run(m, a, b)
+    print(awg, abg, sm2)
+    assert_eq((awg, abg), (False, False))
+    assert_eq(sm1.split('\n')[1], sm2.split('\n')[1])
+    assert_neq(sm1.split('\n')[2], sm2.split('\n')[2])
+
+    a.weight.requires_grad_(True)
+    a.bias.requires_grad_(False)
+    awg, abg, sm3 = run(m, a, b)
+    print(awg, abg, sm3)
+    assert_eq((awg, abg), (False, False))
+    assert_neq(sm2.split('\n')[1], sm3.split('\n')[1])
+    assert_eq(sm2.split('\n')[2], sm3.split('\n')[2])
+
 if __name__ == "__main__":
-    bmt.init_distributed()
+    bmt.init_distributed(pipe_size=1)
 
     test_main()
+    test_main_pipe()
