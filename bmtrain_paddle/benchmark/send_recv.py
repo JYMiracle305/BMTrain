@@ -3,17 +3,17 @@ from .shape import SHAPES
 from ..global_var import config
 from ..utils import print_rank
 from .utils import format_size
-import torch
+import paddle
 def send_recv():
-    current_stream = torch.cuda.current_stream()
+    current_stream = paddle.device.cuda.current_stream()
     for shape in SHAPES:
         send_size = shape
 
-        send_buffer = torch.empty( send_size // 2, dtype=torch.half, device="cuda" )
-        recv_buffer = torch.empty( send_size // 2, dtype=torch.half, device="cuda" )
+        send_buffer = paddle.empty( send_size // 2, dtype='half', device="cuda" )
+        recv_buffer = paddle.empty( send_size // 2, dtype='half', device="cuda" )
         
-        start_evt = torch.cuda.Event(enable_timing=True)
-        end_evt = torch.cuda.Event(enable_timing=True)
+        start_evt = paddle.device.cuda.Event(enable_timing=True)
+        end_evt = paddle.device.cuda.Event(enable_timing=True)
 
         current_stream.record_event(start_evt)
         nccl.groupStart()

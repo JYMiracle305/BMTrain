@@ -1,6 +1,6 @@
-import torch
-from torch.nn.parameter import Parameter
-import torch.nn.functional as F
+import paddle
+from paddle.nn.parameter import Parameter
+import paddle.nn.functional as F
 import math
 
 import bmtrain as bmt
@@ -25,7 +25,7 @@ class VPEmbedding(bmt.DistributedModule):
         self,
         vocab_size: int,
         embedding_size: int,
-        dtype: torch.dtype = torch.half,
+        dtype: paddle.dtype = 'half',
         init_mean: float = 0.0,
         init_std: float = 1,
     ):
@@ -37,15 +37,15 @@ class VPEmbedding(bmt.DistributedModule):
         self.start_index = bmt.config["tp_rank"] * self.vocab_size_per_partition
         self.end_index = (bmt.config["tp_rank"] + 1) * self.vocab_size_per_partition
         self.weight = bmt.DistributedParameter(
-            torch.empty(self.vocab_size_per_partition, embedding_size, dtype=dtype),
+            paddle.empty(self.vocab_size_per_partition, embedding_size, dtype=dtype),
             init_method=bmt.ParameterInitializer(
-                torch.nn.init.normal_, mean=init_mean, std=init_std
+                paddle.nn.init.normal_, mean=init_mean, std=init_std
             ),
             tp_split_dim=0,
             tp_mode=True,
         )
 
-    def forward(self, x: torch.Tensor, projection=False):
+    def forward(self, x: paddle.Tensor, projection=False):
         if not projection:
             weight = all_gather(self.weight, comm=config["tp_comm"]).flatten(0, 1)
             out = F.embedding(x, weight)

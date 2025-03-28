@@ -1,5 +1,5 @@
-import torch
-from torch.nn.parameter import Parameter
+import paddle
+from paddle.nn.parameter import Parameter
 
 import bmtrain as bmt
 from bmtrain.global_var import config
@@ -40,19 +40,19 @@ class ColumnParallelLinear(bmt.DistributedModule):
         assert out_features % tp_size == 0
         self.out_features_per_partition = out_features // tp_size
         self.weight = bmt.DistributedParameter(
-            torch.empty(
+            paddle.empty(
                 self.out_features_per_partition, in_features, dtype=dtype, device="cuda"
             ),
-            init_method=torch.nn.init.xavier_normal_,
+            init_method=paddle.nn.init.xavier_normal_,
             tp_split_dim=0,
             tp_mode=True,
         )
         if bias:
             self.bias = bmt.DistributedParameter(
-                torch.empty(
+                paddle.empty(
                     self.out_features_per_partition, dtype=dtype, device="cuda"
                 ),
-                init_method=torch.nn.init.zeros_,
+                init_method=paddle.nn.init.zeros_,
                 tp_split_dim=0,
                 tp_mode=True,
             )

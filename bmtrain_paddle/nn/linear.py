@@ -1,9 +1,9 @@
-import torch
-import torch.nn.functional as F
+import paddle
+import paddle.nn.functional as F
 import bmtrain as bmt
 
 
-class OpLinear(torch.autograd.Function):
+class OpLinear(paddle.autograd.Function):
     @staticmethod
     def forward(ctx, x, weight, bias=None):
         ctx.save_for_backward(x, weight, bias)
@@ -37,12 +37,12 @@ class Linear(bmt.DistributedModule):
         self.out_features = out_features
         self.weight = bmt.DistributedParameter(
             torch.empty(out_features, in_features, dtype=dtype, device="cuda"),
-            init_method=torch.nn.init.xavier_normal_,
+            init_method=paddle.nn.init.xavier_normal_,
         )
         if bias:
             self.bias = bmt.DistributedParameter(
-                torch.empty(out_features, dtype=dtype, device="cuda"),
-                init_method=torch.nn.init.zeros_,
+                paddle.empty(out_features, dtype=dtype, device="cuda"),
+                init_method=paddle.nn.init.zeros_,
             )
         else:
             self.register_parameter("bias", None)

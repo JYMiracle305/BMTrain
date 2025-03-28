@@ -1,5 +1,5 @@
 from typing import Optional
-import torch
+import paddle
 from .. import debug
 from .. import nccl
 from ..global_var import config
@@ -61,7 +61,7 @@ class InspectTensor:
                             kw = f'{item["prefix"]}{item["name"]}'
                             if kw not in kw_cnt:
                                 kw_cnt[kw] = 0
-                            tensor = torch.cat(
+                            tensor = paddle.cat(
                                 [
                                     summary[k + m * (j - i)]["tensor"]
                                     for m in range(config["micros"])
@@ -69,7 +69,7 @@ class InspectTensor:
                                 dim=0,
                             )
                             grad = (
-                                torch.cat(
+                                paddle.cat(
                                     [
                                         summary[k + m * (j - i)]["tensor"].grad
                                         for m in range(config["micros"])
@@ -127,7 +127,7 @@ class InspectTensor:
                                 kw_cnt[kw] += 1
 
                 after_len = len(self.summary)
-                with torch.enable_grad():
+                with paddle.enable_grad():
                     for it in self.summary[before_len:after_len]:
                         if it["tensor"] is not None:
                             has_grad = it["grad"] is not None
@@ -157,14 +157,14 @@ class InspectTensor:
                             )
                             has_grad = info.pop("has_grad")
                             it.update(info)
-                            tensor = torch.empty(it["shape"]).cuda().requires_grad_()
+                            tensor = paddle.empty(it["shape"]).cuda().requires_grad_()
                             tensor = broadcast(
                                 tensor,
                                 it["inside_pipe"]["stage_id"],
                                 config["pipe_comm"],
                             )
                             if has_grad:
-                                grad = torch.empty(it["shape"]).cuda()
+                                grad = paddle.empty(it["shape"]).cuda()
                         tensor = tensor.chunk(stages, dim=0)[stage_id].clone()
                         it["tensor"] = tensor
                         if has_grad:
@@ -226,7 +226,7 @@ class InspectTensor:
 
             if not item["requires_grad"] or item["tensor"].grad is None:
                 x = item["tensor"]
-                info = torch.empty(2, dtype=x.dtype, device=x.device)
+                info = paddle.empty(2, dtype=x.dtype, device=x.device)
                 info[0] = x.mean()
                 info[1] = x.var()
                 nccl.allReduce(info.storage(), info.storage(), "sum", comm)
@@ -237,7 +237,7 @@ class InspectTensor:
                 grad_std = None
             else:
                 x = item["tensor"]
-                info = torch.empty(4, dtype=x.dtype, device=x.device)
+                info = paddle.empty(4, dtype=x.dtype, device=x.device)
                 info[0] = x.mean()
                 info[1] = x.var()
                 info[2] = x.grad.mean()
@@ -273,7 +273,7 @@ class InspectTensor:
 
     def get_tensor(
         self, name: str, group: Optional[str] = None, index: Optional[int] = None
-    ) -> torch.Tensor:
+    ) -> paddle.Tensor:
         """Get the tensor recorded by `record_tensor` by name, group and index.
 
         Args:
@@ -343,7 +343,7 @@ def inspect_tensor() -> InspectTensorManager:
     return InspectTensorManager()
 
 
-def record_tensor(x: torch.Tensor, name: str, group=None):
+def record_tensor(x: paddle.Tensor, name: str, group=None):
     """Record the tensor for inspection.
 
     Args:
@@ -355,7 +355,7 @@ def record_tensor(x: torch.Tensor, name: str, group=None):
     **Note:** Recording too many tensors may cause memory issues.
 
     """
-    if isinstance(x, torch.nn.Parameter):
+    if isinstance(x, paddle.nn.Parameter):
         raise RuntimeError("Cannot inspect Parameter")
 
     if not debug.get("_inspect_tensor", False):

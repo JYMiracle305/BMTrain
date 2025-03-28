@@ -1,6 +1,6 @@
 
 from typing_extensions import Literal
-import torch
+import paddle
 from .. import C
 from .enums import *
 
@@ -26,21 +26,21 @@ class NCCLCommunicator:
 
 # utils
 
-def dtype2nccl(dtype : torch.dtype) -> int:
+def dtype2nccl(dtype : paddle.dtype) -> int:
     MAP = {
-        torch.int8: ncclInt8,
-        torch.uint8 : ncclUint8,
-        torch.int32 : ncclInt32,
-        torch.int : ncclInt32,
-        torch.int64 : ncclInt64,
-        torch.float16 : ncclFloat16,
-        torch.half : ncclHalf,
-        torch.bfloat16 : ncclBFloat16,
-        torch.float32 : ncclFloat32,
-        torch.float : ncclFloat,
-        torch.float64 : ncclFloat64,
-        torch.double : ncclDouble,
-        torch.bool : ncclBool
+        'int8': ncclInt8,
+        'uint8' : ncclUint8,
+        'int32' : ncclInt32,
+        'int' : ncclInt32,
+        'int64' : ncclInt64,
+        'float16' : ncclFloat16,
+        'half' : ncclHalf,
+        'bfloat16' : ncclBFloat16,
+        'float32' : ncclFloat32,
+        'float' : ncclFloat,
+        'float64' : ncclFloat64,
+        'double' : ncclDouble,
+        'bool' : ncclBool
     }
     if dtype not in MAP:
         raise TypeError("Unsupport dtype %s" % dtype)
@@ -101,8 +101,8 @@ def commRank(comm : NCCLCommunicator):
     """
     return C.ncclCommUserRank(comm.ptr)
 def allReduce(
-        src : torch.storage._StorageBase,
-        dst : torch.storage._StorageBase,
+        src : paddle.storage._StorageBase,
+        dst : paddle.storage._StorageBase,
         op : Literal["sum", "prod", "max", "min", "avg"],
         comm : NCCLCommunicator
     ):
@@ -136,9 +136,9 @@ def allReduce(
         datatype,
         operator,
         comm.ptr,
-        torch.cuda.current_stream().cuda_stream
+        paddle.device.cuda.current_stream().cuda_stream
     )
-def send(src : torch.storage._StorageBase,
+def send(src : paddle.storage._StorageBase,
          peer : int,
          comm : NCCLCommunicator
     ):
@@ -159,9 +159,9 @@ def send(src : torch.storage._StorageBase,
         datatype,
         peer,
         comm.ptr,
-        torch.cuda.current_stream().cuda_stream
+        paddle.device.cuda.current_stream().cuda_stream
     )
-def recv(dst : torch.storage._StorageBase,
+def recv(dst : paddle.storage._StorageBase,
          peer : int,
          comm : NCCLCommunicator
         ):
@@ -174,12 +174,12 @@ def recv(dst : torch.storage._StorageBase,
         datatype,
         peer,
         comm.ptr,
-        torch.cuda.current_stream().cuda_stream
+        paddle.device.cuda.current_stream().cuda_stream
     )
     
 def broadcast(
-        src : torch.storage._StorageBase,
-        dst : torch.storage._StorageBase,
+        src : paddle.storage._StorageBase,
+        dst : paddle.storage._StorageBase,
         root : int,
         comm : NCCLCommunicator
     ):
@@ -213,12 +213,12 @@ def broadcast(
         datatype, 
         root, 
         comm.ptr, 
-        torch.cuda.current_stream().cuda_stream
+        paddle.device.cuda.current_stream().cuda_stream
     )
 
 def reduce(
-        src : torch.storage._StorageBase,
-        dst : torch.storage._StorageBase,
+        src : paddle.storage._StorageBase,
+        dst : paddle.storage._StorageBase,
         op : Literal["sum", "prod", "max", "min", "avg"],
         root : int,
         comm : NCCLCommunicator
@@ -247,11 +247,11 @@ def reduce(
     operator = op2nccl(op)
 
     assert dst.size() == src.size(), "Buffer size not aligned"
-    C.ncclReduce(sendbuff, recvbuff, count, datatype, operator, root, comm.ptr, torch.cuda.current_stream().cuda_stream)
+    C.ncclReduce(sendbuff, recvbuff, count, datatype, operator, root, comm.ptr, paddle.device.cuda.current_stream().cuda_stream)
 
 def allGather(
-        src : torch.storage._StorageBase,
-        dst : torch.storage._StorageBase,
+        src : paddle.storage._StorageBase,
+        dst : paddle.storage._StorageBase,
         comm : NCCLCommunicator
     ):
     """NCCL API: `ncclAllGather <https://docs.nvidia.com/deeplearning/nccl/user-guide/docs/api/colls.html#ncclallgather>`_
@@ -280,13 +280,13 @@ def allGather(
         sendcount, 
         datatype, 
         comm.ptr, 
-        torch.cuda.current_stream().cuda_stream
+        paddle.device.cuda.current_stream().cuda_stream
     )
 
 
 def reduceScatter(
-        src : torch.storage._StorageBase,
-        dst : torch.storage._StorageBase,
+        src : paddle.storage._StorageBase,
+        dst : paddle.storage._StorageBase,
         op : Literal["sum", "prod", "max", "min", "avg"],
         comm : NCCLCommunicator
     ):
@@ -320,7 +320,7 @@ def reduceScatter(
         datatype,
         operator,
         comm.ptr,
-        torch.cuda.current_stream().cuda_stream
+        paddle.device.cuda.current_stream().cuda_stream
     )
 
 def groupStart():
