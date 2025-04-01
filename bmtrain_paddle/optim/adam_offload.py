@@ -10,7 +10,7 @@ from collections import defaultdict
 from ._distributed import state_dict_gather
 
 
-class AdamOffloadOptimizer(paddle.optim.Optimizer):
+class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
     """
     Adam optimizer using optimizer offload.
     """
@@ -163,10 +163,10 @@ class AdamOffloadOptimizer(paddle.optim.Optimizer):
                 other_kwargs = {}
                 if (
                     "maximize"
-                    in inspect.signature(paddle.optim._functional.adam).parameters
+                    in inspect.signature(paddle._legacy_C_ops.adam).parameters
                 ):
                     other_kwargs["maximize"] = False
-                paddle.optim._functional.adam(
+                paddle._legacy_C_ops.adam(
                     [state["_param_fp32"]],
                     [grad],
                     [state["exp_avg"]],

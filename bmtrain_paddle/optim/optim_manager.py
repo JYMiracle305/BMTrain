@@ -74,7 +74,7 @@ class OptimManager:
 
     def add_optimizer(
         self,
-        optimizer: paddle.optim.Optimizer,
+        optimizer: paddle.optimizer.Optimizer,
         lr_scheduler: Optional[WarmupLRScheduler] = None,
     ):
         """Add optimizer and (optional) its corresponding lr_scheduler into optim_manager.

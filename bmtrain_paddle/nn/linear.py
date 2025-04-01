@@ -3,15 +3,16 @@ import paddle.nn.functional as F
 import bmtrain as bmt
 
 
-class OpLinear(paddle.autograd.Function):
+class OpLinear(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(ctx, x, weight, bias=None):
-        ctx.save_for_backward(x, weight, bias)
-        return F.linear(x, weight, bias)
+    def forward(x, weight, bias=None):
+        ctx = {}
+        ctx['saved_tensors'] = (x, weight, bias)
+        return F.linear(x, weight, bias), ctx
 
     @staticmethod
     def backward(ctx, grad_output):
-        x, weight, bias = ctx.saved_tensors
+        x, weight, bias = ctx['saved_tensors']
         grad_x = grad_weight = grad_bias = None
         if x.requires_grad:
             grad_x = grad_output.matmul(weight)

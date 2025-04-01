@@ -1,7 +1,6 @@
 import paddle
 from ..global_var import config
 from . import _function as F
-import paddle.optim._functional
 from .. import C
 from .. import nccl
 import inspect
@@ -11,7 +10,7 @@ from itertools import chain
 from collections import defaultdict
 
 
-class AdamOptimizer(paddle.optim.Optimizer):
+class AdamOptimizer(paddle.optimizer.Optimizer):
     """
     Adam optimizer support fp16 and bf16.
     """
@@ -116,11 +115,11 @@ class AdamOptimizer(paddle.optim.Optimizer):
                         if (
                             "maximize"
                             in inspect.signature(
-                                paddle.optim._functional.adam
+                                paddle._legacy_C_ops.adam
                             ).parameters
                         ):
                             other_kwargs["maximize"] = False
-                        paddle.optim._functional.adam(
+                        paddle._legacy_C_ops.adam(
                             [p],
                             [grad / scale],
                             [state["exp_avg"]],

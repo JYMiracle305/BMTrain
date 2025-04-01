@@ -4,40 +4,43 @@ from . import _function as F
 from bmtrain.global_var import config
 from bmtrain.distributed import all_gather, all_reduce
 
-class OpFusedCrossEntropy(paddle.autograd.Function):
+class OpFusedCrossEntropy(paddle.autograd.PyLayer):
     """
     CrossEntropy dim = 1
     """
     @staticmethod
-    def forward(ctx, x : paddle.Tensor, target : paddle.Tensor, ignore_index: int):
+    def forward(x : paddle.Tensor, target : paddle.Tensor, ignore_index: int):
         assert x.ndim == 2
         softmax = paddle.empty(x.size(), device=x.device, dtype=x.dtype)
         out = paddle.empty(x.size(0), device=x.device, dtype='float')
+        
         F.cross_entropy_forward(
             x.size(0), x.size(1),
             x, target,
             softmax, out,
             ignore_index,
         )
-        ctx.ignore_index = ignore_index
-        ctx.save_for_backward(softmax, target)
-        return out # float tensor
+        ctx = {}
+        ctx['ignore_index'] = ignore_index
+        # ctx.ignore_index = ignore_index
+        ctx['saved_tensors'] = (softmax, target)
+        return out, ctx # float tensor
         
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
         grad_output = grad_output.contiguous()
-        softmax, target = ctx.saved_tensors
+        softmax, target = ctx['saved_tensors']
         F.cross_entropy_backward_inplace(
             softmax.size(0), softmax.size(1),
             grad_output, target,
             softmax,
-            ctx.ignore_index,
+            ctx['ignore_index'],
         )
         return (softmax, None, None)
 
-class VPFusedCrossEntropy(paddle.autograd.Function):
+class VPFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(ctx, logits : paddle.Tensor, target : paddle.Tensor):
+    def forward(logits : paddle.Tensor, target : paddle.Tensor):
         comm = config['tp_comm']
         rank = config['tp_rank']
         world_size = config['tp_size']
@@ -80,15 +83,16 @@ class VPFusedCrossEntropy(paddle.autograd.Function):
 
         loss = paddle.log(sum_exp_logits.view(predicted_logits.shape)) - predicted_logits
 
+        ctx = {}
         # Normalize
-        ctx.save_for_backward(softmax, target_mask, masked_target_1d)
+        ctx['saved_tensors'] = (softmax, target_mask, masked_target_1d)
 
-        return loss
+        return loss, ctx
 
     @staticmethod
     def backward(ctx, grad_output):
         # Retreive tensors from the forward path.
-        softmax, target_mask, masked_target_1d = ctx.saved_tensors
+        softmax, target_mask, masked_target_1d = ctx['saved_tensors']
         # All the inputs have softmax as thier gradient.
         grad_input = softmax
         # For simplicity, work with the 2D gradient.
@@ -105,7 +109,7 @@ class VPFusedCrossEntropy(paddle.autograd.Function):
 
         return grad_input, None
 
-class FusedCrossEntropy(paddle.nn.Module):
+class FusedCrossEntropy(paddle.nn.Layer):
     r"""This criterion computes the cross entropy loss between input and target.
 
     It is useful when training a classification problem with `C` classes.
@@ -244,7 +248,7 @@ class FusedCrossEntropy(paddle.nn.Module):
 
         if self.weight is not None:
             if self.weight.dim() != 1 or self.weight.size(0) != input.size(1):
-                raise ValueError("weight should be a 1D tensor of size C");
+                raise ValueError("weight should be a 1D tensor of size C")
             w = self.weight[paddle.where(target==self.ignore_index, 0, target)].float()
             w[target==self.ignore_index] = 0
         else:

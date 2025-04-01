@@ -14,7 +14,7 @@ class WarmupLRScheduler:
 
     def __init__(
         self,
-        optimizer: paddle.optim.Optimizer,
+        optimizer: paddle.optimizer.Optimizer,
         start_lr,
         warmup_iter,
         end_iter,

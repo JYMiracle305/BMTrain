@@ -1,5 +1,5 @@
 import paddle
-from paddle.nn.parameter import Parameter
+# from paddle.nn.parameter import Parameter
 
 import bmtrain as bmt
 from bmtrain.global_var import config

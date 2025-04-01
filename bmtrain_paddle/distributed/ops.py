@@ -8,15 +8,15 @@ from ..nccl import send as ncclSend
 from ..nccl import recv as ncclRecv
 from ..nccl import commCount,commRank,NCCLCommunicator
 DTYPE_LIST = [
-    'float64',
-    'float32',
-    'float16',
-    'int64',
-    'int32',
-    'int16',
-    'int8',
-    'bfloat16',
-    'bool'
+    paddle.float64,
+    paddle.float32,
+    paddle.float16,
+    paddle.int64,
+    paddle.int32,
+    paddle.int16,
+    paddle.int8,
+    paddle.bfloat16,
+    paddle.bool
 ]
 def send_activations(hidden_state, next_rank, comm):
     send_meta(hidden_state, next_rank, comm)
@@ -44,20 +44,22 @@ def recv_meta(prev_rank, comm):
     shape = meta_data[2:n_dims+2].tolist()
     return dtype,shape
 
-class OpBroadcast(paddle.autograd.Function):
+class OpBroadcast(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(ctx, src, root, comm = None):
+    def forward(src, root, comm = None):
         if comm is None:
             comm = config["comm"]
-        ctx.comm = comm
         outputs = paddle.empty_like(src, dtype = src.dtype, device = src.device)
-        ncclBroadcast(src.storage(), outputs.storage(), root, comm)
-        return outputs
+        if src.place.is_gpu_place():
+            outputs = outputs._to(place=src.place)
+        ncclBroadcast(src, outputs, root, comm)
+        return outputs, comm
 
     @staticmethod
-    def backward(ctx, grad_output):
-        res = all_reduce(grad_output, "sum", ctx.comm)
+    def backward(grad_output, *ctx_args):
+        comm, root = ctx_args
+        res = all_reduce(grad_output, "sum", comm)
         return res, None, None
 
 def broadcast(src, root, comm=None):
@@ -65,29 +67,30 @@ def broadcast(src, root, comm=None):
         raise RuntimeError("BMTrain is not initialized")
     return OpBroadcast.apply(src, root, comm)
 
-class OpAllGather(paddle.autograd.Function):
+class OpAllGather(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(ctx, input : paddle.Tensor, comm = None):
+    def forward(input : paddle.Tensor, comm = None):
         if comm is None:
             comm = config["comm"]
         world_size = commCount(comm)
         if not input.is_contiguous():
             input = input.contiguous()
-        if input.storage_offset() != 0 or input.storage().size() != input.numel():
+        if input._offset() != 0 or input.numel() != input.size:
             input = input.clone()
-        output = paddle.empty( (world_size,) + input.size(), dtype=input.dtype, device=input.device)
-        ctx.comm = comm
+        output = paddle.empty( (world_size,) + input.size(), dtype=input.dtype)
+        if input.place.is_gpu_place():
+            output = output._to(place=input.place)
         ncclAllGather(
-            input.storage(),
-            output.storage(),
+            input._ptr(),
+            output._ptr(),
             comm
         )
-        return output
+        return output, comm
 
     @staticmethod
-    def backward(ctx, grad_output):
-        return grad_output[commRank(ctx.comm)], None
+    def backward(grad_output, comm):
+        return grad_output[commRank(comm)], None
 
 def all_gather(x : paddle.Tensor, comm = None):
     """Gathers the input tensor from all processes.
@@ -104,46 +107,60 @@ def all_gather(x : paddle.Tensor, comm = None):
     assert x.is_cuda
     return OpAllGather.apply(x, comm)
 
-class OpReduceScatter(paddle.autograd.Function):
+class OpReduceScatter(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(ctx, input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
+    def forward(input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
         if comm is None:
             comm = config["comm"]
-        ctx.comm = comm
         rank = commRank(comm)
         assert input.shape[0] % commCount(comm) == 0, "The dimension 0 must be divisible by the number of communication processes"
         if not input.is_contiguous():
             input = input.contiguous()
-        if input.storage_offset() != 0 or input.storage().size() != input.numel():
+        if input._offset() != 0 or input.numel() != input.size:
             input = input.clone()
         output_shape = (input.shape[0] // commCount(comm), *input.shape[1:])
-        output = paddle.empty( output_shape, dtype=input.dtype, device=input.device )
+        output = paddle.empty(output_shape, dtype=input.dtype)
+        if input.place.is_gpu_place():
+            output = output._to(place=input.place)
         ncclReduceScatter(
-            input.storage(),
-            output.storage(),
+            input._ptr(),
+            output._ptr(),
             op,
             comm
         )
-        ctx.op = op
+        ctx = {
+            'op': op,
+            'comm': comm,
+            'input_shape': input.shape,
+            'world_size': commCount(comm)
+        }
         if op in ["sum", "avg"]:
             pass
         elif op in ["max", "min"]:
-            ctx.save_for_backward( output != input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
-        else:
-            ctx.save_for_backward( output / input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
-        return output
+            ctx['mask'] = (output == input[rank * output.shape[0]:(rank + 1) *output.shape[0]])
+            # ctx.save_for_backward( output != input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
+        elif op == "prod":
+            ctx['prod_mask'] = (output / input[rank * output.shape[0]:(rank + 1) * output.shape[0]])
+            # ctx.save_for_backward( output / input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
+        return output, ctx
 
     @staticmethod
     def backward(ctx, grad_output):
+        op = ctx['op']
+        comm = ctx['comm']
+        world_size = ctx['world_size']
         with paddle.no_grad():
-            grad_output = OpAllGather.apply(grad_output, ctx.comm).flatten(0,1)
-        if ctx.op in ["max", "min", "prod"]:
+            grad_output = OpAllGather.apply(grad_output, comm).flatten(0,1)
+        if op in ["max", "min", "prod"]:
             raise NotImplementedError("max min operation now do not support backward")
         else:
             if ctx.op == "avg":
                 grad_output /= commCount(ctx.comm)
-            return grad_output, None, None
+        # 形状重构（适配可能存在的非连续内存）
+        grad_input = grad_input.reshape(ctx['input_shape']).contiguous()    
+
+        return grad_output, None, None
        
 
 def reduce_scatter(x : paddle.Tensor, op : str = "sum", comm = None):
@@ -163,44 +180,55 @@ def reduce_scatter(x : paddle.Tensor, op : str = "sum", comm = None):
     assert x.is_cuda
     return OpReduceScatter.apply(x, op, comm)
 
-class OpAllReduce(paddle.autograd.Function):
+class OpAllReduce(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(ctx, input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
+    def forward(input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
         if comm is None:
             comm = config["comm"]
-        ctx.comm = comm
         if not input.is_contiguous():
             input = input.contiguous()
-        if input.storage_offset() != 0 or input.storage().size() != input.numel():
+        if input._offset() != 0 or input.numel() != input.size:
             input = input.clone()
-        output = paddle.empty( input.size(), dtype=input.dtype, device=input.device)
+        output = paddle.empty( input.numel(), dtype=input.dtype)
+        if input.place.is_gpu_place():
+            output = output._to(place=input.place)
         
         ncclAllReduce(
-            input.storage(),
-            output.storage(),
+            input,
+            output,
             op,
             comm
         )
-        ctx.op = op
+        ctx = {
+            'op': op,
+            'comm': comm,
+            'input_shape': input.shape
+        }
         
         if op in ["sum", "avg"]:
             pass
         elif op in ["max", "min"]:
-            ctx.save_for_backward( input != output )
+            ctx['mask'] = (input == output)
         else:
-            ctx.save_for_backward( output / input )
-        return output
+            ctx['prod_mask'] = output / input
+        return output, ctx
 
     @staticmethod
     def backward(ctx, grad_output):
-        if ctx.op == "sum":
-            return grad_output, None, None
-        elif ctx.op == "avg":
-            return grad_output / commCount(ctx.comm), None, None
-        elif ctx.op in ["max", "min"]:
-            return paddle.masked_fill(grad_output, ctx.saved_tensors[0], 0), None, None
+        op = ctx['op']
+        comm = ctx['comm']
+
+        if op == "sum":
+            pass
+        elif op == "avg":
+            grad_output = grad_output / commCount(comm)
+        elif op in ["max", "min"]:
+            mask = ctx['mask']
+            grad_output = grad_output * mask.astype(grad_output.dtype)
         else:
-            return grad_output * ctx.saved_tensors[0], None, None
+            grad_output = grad_output * ctx.saved_tensors[0]
+
+        return grad_output, None, None
 
 def all_reduce(x : paddle.Tensor, op : str = "sum", comm = None):
     """Reduces the input tensor from all processes.

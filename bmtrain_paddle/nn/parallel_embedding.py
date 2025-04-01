@@ -1,5 +1,5 @@
 import paddle
-from paddle.nn.parameter import Parameter
+# from paddle.nn.parameter import Parameter
 import paddle.nn.functional as F
 import math
 
