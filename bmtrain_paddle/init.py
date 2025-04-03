@@ -13,6 +13,22 @@ import paddle.distributed.fleet as fleet
 from . import nccl
 from .synchronize import synchronize
 
+class FileStore:
+    """基于文件系统的简易store实现"""
+    def __init__(self, prefix="bmtrain_store"):
+        self.base_path = f"/tmp/{prefix}_{os.getenv('MASTER_ADDR')}_{os.getenv('MASTER_PORT')}"
+        os.makedirs(self.base_path, exist_ok=True)
+
+    def set(self, key: str, value: str):
+        with open(os.path.join(self.base_path, key), "w") as f:
+            f.write(value)
+
+    def get(self, key: str) -> str:
+        file_path = os.path.join(self.base_path, key)
+        while not os.path.exists(file_path):
+            pass  # 等待主进程创建文件
+        with open(file_path, "r") as f:
+            return f.read()
 
 def init_distributed(
     init_method: str = "env://",
@@ -60,44 +76,44 @@ def init_distributed(
     port = os.environ["MASTER_PORT"]
     master = addr + ":" + port
     timeout = datetime.timedelta(seconds=1800)
-    # rendezvous_iterator = dist.rendezvous(
-    #     init_method, rank, world_size, timeout=timeout
-    # )
-
-    # store, rank, world_size = next(rendezvous_iterator)
-    # store.set_timeout(timeout)
-    # store = dist.PrefixStore("bmtrain", store)
 
     # 使用Paddle的分布式初始化
-    fleet.init(is_collective=True)
+    # fleet.init(is_collective=True)
 
+    # torch.cuda.set_device(local_rank)
+    paddle.set_device(f'gpu:{local_rank}')
     paddle.distributed.init_parallel_env()
     world_size = paddle.distributed.get_world_size()
     rank = paddle.distributed.get_rank()
     local_rank = int(os.getenv("PADDLE_TRAINER_ID", "0"))
 
-    # torch.cuda.set_device(local_rank)
-    paddle.set_device(f'gpu:{local_rank}')
+    # 全局配置初始化
+    config.update({
+        "initialized": True,
+        "pipe_size": max(pipe_size, 1),
+        "pipe_enabled": pipe_size > 0,
+        "local_rank": local_rank,
+        "local_size": local_size,
+        "rank": rank,
+        "world_size": world_size,
+        "calc_stream": paddle.device.cuda.current_stream(),
+        "load_stream": paddle.device.cuda.Stream(priority=2),
+        "tp_comm_stream": paddle.device.cuda.Stream(priority=2),
+        "pp_comm_stream": paddle.device.cuda.Stream(priority=2),
+        "barrier_stream": paddle.device.cuda.Stream(),
+        "load_event": paddle.device.cuda.Event(),
+        "tp_size": max(tp_size, 1),
+        "save_param_to_cpu": True,
+    })
 
-    config["initialized"] = True
-    config["pipe_size"] = pipe_size if pipe_size > 0 else 1
-    config["pipe_enabled"] = pipe_size > 0
-    config["local_rank"] = local_rank
-    config["local_size"] = local_size
-    config["rank"] = rank
-    config["world_size"] = world_size
-    config["calc_stream"] = paddle.device.cuda.current_stream()
-    config["load_stream"] = paddle.device.cuda.Stream(priority=-1)
-    config["tp_comm_stream"] = paddle.device.cuda.Stream(priority=-1)
-    config["pp_comm_stream"] = paddle.device.cuda.Stream(priority=-1)
-    config["barrier_stream"] = paddle.device.cuda.Stream()
-    config["load_event"] = paddle.device.cuda.Event()
-    config["tp_size"] = tp_size if tp_size > 0 else 1
+    # 自定义store初始化
+    store = FileStore()
+
     config["topology"] = topology(config)
     config["zero_rank"] = config["topology"].get_group_rank("zero")
     config["tp_rank"] = config["topology"].get_group_rank("tp")
     config["tp_zero_rank"] = config["topology"].get_group_rank("tp_zero")
-    config["save_param_to_cpu"] = True
+
     cpus_this_worker = None
 
     all_available_cpus = sorted(list(os.sched_getaffinity(0)))
@@ -128,12 +144,13 @@ def init_distributed(
         pass
 
     if rank == 0:
-        unique_id: bytes = nccl.getUniqueId()
+        unique_id: bytes = nccl.getUniqueId().hex()
         # TODO 进程间通信：设置一个唯一的id，一个进程设置，其他进程可以获取到nccl
-        store.set("BMTRAIN_UNIQUE_ID", unique_id.hex())
+        store.set("BMTRAIN_UNIQUE_ID", unique_id)
+    else:
+        unique_id = store.get("BMTRAIN_UNIQUE_ID")
 
-    unique_id = bytes.fromhex(store.get("BMTRAIN_UNIQUE_ID").decode())
-    config["comm"] = nccl.commInitRank(unique_id, world_size, rank)
+    config["comm"] = nccl.commInitRank(bytes.fromhex(unique_id), world_size, rank)
 
     topo = config["topology"]
 
@@ -215,6 +232,7 @@ class topology:
         pp_size = config["pipe_size"]
         tp_size = config["tp_size"]
         world_size = config["world_size"]
+        print(f"world_size:{world_size} pp_size:{pp_size} tp_size:{tp_size}")
         assert (
             world_size % (pp_size * tp_size) == 0
         ), "The nums of GPUs must be divisible by the pipeline parallel size * tensor parallel size"
