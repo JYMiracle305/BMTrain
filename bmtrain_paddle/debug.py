@@ -1,4 +1,4 @@
-import torch
+import paddle
 
 DEBUG_VARS = {}
 
@@ -11,7 +11,7 @@ def clear(key=None):
 
 def set(key, value):
     global DEBUG_VARS
-    if torch.is_tensor(value):
+    if paddle.is_tensor(value):
         value = value.detach().cpu()
     DEBUG_VARS[key] = value
 

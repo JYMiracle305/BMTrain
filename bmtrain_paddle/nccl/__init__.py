@@ -3,7 +3,8 @@ from typing_extensions import Literal
 import paddle
 from .. import C
 from .enums import *
-
+import ctypes
+from ..utils import get_ptr
 class NCCLCommunicator:
     """
     NCCL communicator stores the communicator handle.
@@ -118,16 +119,17 @@ def allReduce(
     assert src.dtype == dst.dtype, "send and recv buffers must be the same type"
     assert src.place.is_gpu_place() and dst.place.is_gpu_place(), "Tensors must be on GPU"
 
-    sendbuff = src._ptr()
-    recvbuff = dst._ptr()
+    sendbuff = get_ptr(src)
+    recvbuff = get_ptr(dst)
+
     count = src.numel()
     datatype = dtype2nccl(src.dtype)
     operator = op2nccl(op)
 
     assert src.size() == dst.size(), "Buffer size not aligned"
     C.ncclAllReduce(
-        sendbuff,
-        recvbuff,
+        sendbuff.value,
+        recvbuff.value,
         count,
         datatype,
         operator,

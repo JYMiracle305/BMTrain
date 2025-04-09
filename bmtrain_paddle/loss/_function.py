@@ -1,20 +1,21 @@
 from .. import C
 import paddle
 
-CHECK_INPUT = lambda x: x.is_contiguous() and x.is_cuda
+CHECK_INPUT = lambda x: x.is_contiguous() and isinstance(x.place, paddle.CUDAPlace)
 
 
 def has_inf_nan(g_half: paddle.Tensor, out: paddle.Tensor) -> None:
-    assert out.dtype == 'uint8', "out must be a uint8 tensor"
+    assert out.dtype == paddle.uint8, "out must be a uint8 tensor"
+    print("g_half.place, out.place :::", g_half.place, out.place)
     assert CHECK_INPUT(g_half), "g_fp16 must be contiguous and on cuda"
     assert CHECK_INPUT(out), "out must be contiguous and on cuda"
     mid = paddle.zeros(1024, device=out.device, dtype=out.dtype)
     stream = paddle.device.cuda.current_stream().cuda_stream
-    if g_half.dtype == 'float16':
+    if g_half.dtype == paddle.float16:
         C.has_nan_inf_fp16_launcher(
             g_half.numel(), g_half.data_ptr(), mid.data_ptr(), out.data_ptr(), stream
         )
-    elif g_half.dtype == 'bfloat16':
+    elif g_half.dtype == paddle.bfloat16:
         if not C.is_bf16_supported():
             raise NotImplementedError(f"bfloat16 is not supported on current GPU")
         C.has_nan_inf_bf16_launcher(
@@ -37,8 +38,8 @@ def cross_entropy_forward(
     CHECK_INPUT(target)
     CHECK_INPUT(softmax)
     CHECK_INPUT(output)
-    assert target.dtype == 'int32', "target must be an int tensor"
-    assert output.dtype == 'float32', "output must be a float tensor"
+    assert target.dtype == paddle.int32, "target must be an int tensor"
+    assert output.dtype == paddle.float32, "output must be a float tensor"
     assert (
         input.numel() == softmax.numel()
     ), "input and softmax must have the same number of elements"
@@ -50,7 +51,7 @@ def cross_entropy_forward(
     softmax_ptr = softmax.data_ptr()
     output_ptr = output.data_ptr()
     cuda_stream = paddle.device.cuda.current_stream().cuda_stream
-    if input.dtype == 'float16':
+    if input.dtype == paddle.float16:
         C.cross_entropy_forward_fp16_launcher(
             m,
             n,
@@ -61,7 +62,7 @@ def cross_entropy_forward(
             ignore_index,
             cuda_stream,
         )
-    elif input.dtype == 'bfloat16':
+    elif input.dtype == paddle.bfloat16:
         if not C.is_bf16_supported():
             raise NotImplementedError(f"bfloat16 is not supported on current GPU")
         C.cross_entropy_forward_bf16_launcher(
@@ -89,8 +90,8 @@ def cross_entropy_backward_inplace(
     CHECK_INPUT(grad_output)
     CHECK_INPUT(target)
     CHECK_INPUT(x)
-    assert grad_output.dtype == 'float32', "grad_output must be a float tensor"
-    assert target.dtype == 'int32', "target must be an int tensor"
+    assert grad_output.dtype == paddle.float32, "grad_output must be a float tensor"
+    assert target.dtype == paddle.int32, "target must be an int tensor"
     assert (
         target.numel() == grad_output.numel()
     ), "target and grad_output must have the same number of elements"
@@ -99,11 +100,11 @@ def cross_entropy_backward_inplace(
     target_ptr = target.data_ptr()
     x_ptr = x.data_ptr()
 
-    if x.dtype == 'float16':
+    if x.dtype == paddle.float16:
         C.cross_entropy_backward_inplace_fp16_launcher(
             m, n, grad_output_ptr, target_ptr, x_ptr, ignore_index, cuda_stream
         )
-    elif x.dtype == 'bfloat16':
+    elif x.dtype == paddle.bfloat16:
         if not C.is_bf16_supported():
             raise NotImplementedError(f"bfloat16 is not supported on current GPU")
         C.cross_entropy_backward_inplace_bf16_launcher(
@@ -118,12 +119,12 @@ def cross_entropy_backward_inplace(
 def fused_sumexp(logits: paddle.Tensor, max_logits: paddle.Tensor) -> paddle.Tensor:
     CHECK_INPUT(logits)
     CHECK_INPUT(max_logits)
-    assert max_logits.dtype == 'float32', "max_logits must be float tensor"
+    assert max_logits.dtype == paddle.float32, "max_logits must be float tensor"
     assert max_logits.size(0) == logits.size(
         0
     ), "max_logits must have same size(0) as logits"
     sum_exp_logits = paddle.empty(
-        logits.size(0), dtype='float32', device=logits.device
+        logits.size(0), dtype = paddle.float32, device=logits.device
     )
     m = logits.size(0)
     n = logits.size(1)
@@ -131,11 +132,11 @@ def fused_sumexp(logits: paddle.Tensor, max_logits: paddle.Tensor) -> paddle.Ten
     logits_ptr = logits.data_ptr()
     max_logits_ptr = max_logits.data_ptr()
     sum_exp_logits_ptr = sum_exp_logits.data_ptr()
-    if logits.dtype == 'float16':
+    if logits.dtype == paddle.float16:
         C.fused_sumexp_fp16_launcher(
             m, n, logits_ptr, max_logits_ptr, sum_exp_logits_ptr, cuda_stream
         )
-    elif logits.dtype == 'bfloat16':
+    elif logits.dtype == paddle.bfloat16:
         if not C.is_bf16_supported():
             raise NotImplementedError(f"bfloat16 is not supported on current GPU")
         C.fused_sumexp_bf16_launcher(
@@ -152,8 +153,8 @@ def fused_softmax_inplace(
     CHECK_INPUT(logits)
     CHECK_INPUT(max_logits)
     CHECK_INPUT(sum_exp_logits)
-    assert max_logits.dtype == 'float32', "max_logits must be float tensor"
-    assert sum_exp_logits.dtype == 'float32', "sum_exp_logits must be float tensor"
+    assert max_logits.dtype == paddle.float32, "max_logits must be float tensor"
+    assert sum_exp_logits.dtype == paddle.float32, "sum_exp_logits must be float tensor"
     assert max_logits.size(0) == logits.size(
         0
     ), "max_logits must have same size(0) as logits"

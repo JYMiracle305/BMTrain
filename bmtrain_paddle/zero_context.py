@@ -1,4 +1,4 @@
-import torch
+import paddle
 from . import nccl
 from .global_var import config
 from .synchronize import wait_loader
@@ -34,9 +34,9 @@ class ZeroContext:
         self._need_release = True
 
         wait_loader()
-        with torch.cuda.stream(config["load_stream"]):
+        with paddle.device.cuda.stream_guard(config["load_stream"]):
             for kw, val in self.block._storage_info.items():
-                assert self.block._storage_params[kw].is_cuda
+                assert isinstance(self.block._storage_params[kw].place, paddle.CUDAPlace)
                 assert kw not in self._grad_buffer
                 assert kw not in self._param_buffer
                 local_param = self.block._storage_params[kw]
@@ -46,7 +46,7 @@ class ZeroContext:
                     self._param_buffer[kw] = storage_type(
                         val["partition_size"] * val["world_size"]
                     )
-                    self._param_tensor[kw] = torch.tensor(
+                    self._param_tensor[kw] = paddle.tensor(
                         [],
                         dtype=self._param_buffer[kw].dtype,
                         device=self._param_buffer[kw].device,
@@ -57,7 +57,7 @@ class ZeroContext:
                         val["partition_size"] * val["world_size"]
                     )
                     self._grad_tensor[kw] = (
-                        torch.tensor(
+                        paddle.tensor(
                             [],
                             dtype=self._grad_buffer[kw].dtype,
                             device=self._grad_buffer[kw].device,
@@ -75,7 +75,7 @@ class ZeroContext:
                     )
                 nccl.groupEnd()
 
-        current_stream = torch.cuda.current_stream()
+        current_stream = paddle.device.cuda.current_stream()
         current_stream.wait_stream(config["load_stream"])
 
         # set wait stream for each storage
@@ -94,13 +94,13 @@ class ZeroContext:
             if flag != 2:
                 dtype = self._param_buffer[kw_name].dtype
                 device = self._param_buffer[kw_name].device
-                param["parameter"].data = torch.tensor(
+                param["parameter"].data = paddle.tensor(
                     [], dtype=dtype, device=device
                 ).set_(self._param_buffer[kw_name], offset, shape)
             else:
                 dtype = param["parameter"].data.dtype
                 device = param["parameter"].data.device
-                param["parameter"].data = torch.tensor(
+                param["parameter"].data = paddle.tensor(
                     [], dtype=dtype, device=device
                 ).set_(self.ctx_dict[kw_name], offset, shape)
 
@@ -109,7 +109,7 @@ class ZeroContext:
                 and kw_name in self._grad_buffer
                 and param["parameter"].requires_grad
             ):
-                param["parameter"].grad = torch.tensor(
+                param["parameter"].grad = paddle.tensor(
                     [], dtype=dtype, device=device
                 ).set_(self._grad_buffer[kw_name], offset, shape)
 
@@ -135,7 +135,7 @@ class ZeroContext:
                             val["partition_size"]
                         )  # initialize gradient if not exist
                         local_param.grad = (
-                            torch.tensor(
+                            paddle.tensor(
                                 [], dtype=grad_storage.dtype, device=grad_storage.device
                             )
                             .set_(grad_storage)
@@ -146,10 +146,10 @@ class ZeroContext:
                             val["begin"] : val["end"]
                         ] += local_param.grad
 
-            current_stream = torch.cuda.current_stream()
+            current_stream = paddle.device.cuda.current_stream()
             config["load_stream"].wait_stream(current_stream)  # wait for backward
 
-            with torch.cuda.stream(config["load_stream"]):
+            with paddle.device.cuda.stream_guard(config["load_stream"]):
                 nccl.groupStart()
                 for kw, val in self.block._storage_info.items():
                     local_param = self.block._storage_params[kw]
@@ -175,19 +175,19 @@ class ZeroContext:
             dtype = self.block._storage_params[kw_name].dtype
             device = self.block._storage_params[kw_name].device
             if "begin" not in param:
-                param["parameter"].data = torch.tensor([], dtype=dtype, device=device)
+                param["parameter"].data = paddle.tensor([], dtype=dtype, device=device)
                 param["parameter"].grad = None
                 continue
             begin = param["begin"]
             end = param["end"]
-            param["parameter"].data = torch.tensor([], dtype=dtype, device=device).set_(
+            param["parameter"].data = paddle.tensor([], dtype=dtype, device=device).set_(
                 self.block._storage_params[kw_name].storage(), begin, end
             )
             if (
                 param["parameter"].requires_grad
                 and self.block._storage_params[kw_name].grad is not None
             ):
-                param["parameter"].grad = torch.tensor(
+                param["parameter"].grad = paddle.tensor(
                     [], dtype=dtype, device=device
                 ).set_(self.block._storage_params[kw_name].grad.storage(), begin, end)
         if flag == 1:

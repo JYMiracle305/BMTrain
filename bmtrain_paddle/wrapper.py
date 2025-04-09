@@ -1,9 +1,9 @@
-import torch
+import paddle
 from .block_layer import Block, TransformerBlockList
 from .layer import DistributedModule, DistributedParameter
 
 
-def make_distributed(model: torch.nn.Module):
+def make_distributed(model: paddle.nn.Layer):
     for kw in list(model._parameters.keys()):
         if model._parameters[kw] is not None:
             if not isinstance(model._parameters[kw], DistributedParameter):
@@ -17,7 +17,7 @@ def make_distributed(model: torch.nn.Module):
             model._buffers[kw] = model._buffers[kw].cuda()
 
     for kw in list(model._modules.keys()):
-        if isinstance(model, torch.nn.ModuleList):
+        if isinstance(model, paddle.nn.LayerList):
             if not isinstance(model._modules[kw], Block):
                 model._modules[kw] = Block(model_wrapper_dispatch(model._modules[kw]))
         else:
@@ -31,7 +31,7 @@ def make_distributed(model: torch.nn.Module):
     return model
 
 
-def model_wrapper_dispatch(model: torch.nn.Module):
+def model_wrapper_dispatch(model: paddle.nn.Layer):
     if isinstance(model, TransformerBlockList):
         return model
     elif isinstance(model, DistributedModule):
@@ -42,7 +42,7 @@ def model_wrapper_dispatch(model: torch.nn.Module):
         return make_distributed(model)
 
 
-def BMTrainModelWrapper(model: torch.nn.Module) -> torch.nn.Module:
+def BMTrainModelWrapper(model: paddle.nn.Layer) -> paddle.nn.Layer:
     """
     Automatically wrap a model in a BMTrain model.
     Replaces all parameters with DistributedParameter, all modules with DistributedModule, and modules in ModuleList with Block.

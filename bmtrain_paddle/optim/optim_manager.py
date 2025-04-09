@@ -8,7 +8,7 @@ from ..global_var import config
 
 def check_overflow(param_groups):
     # check overflow
-    has_inf_or_nan = paddle.zeros(1, dtype='uint8', device="cuda")[0]
+    has_inf_or_nan = paddle.zeros(1, dtype='uint8').cuda()
     for group in param_groups:
         for p in group['params']:
             if p.grad is not None:
@@ -109,7 +109,8 @@ class OptimManager:
         This is a helper function to call optimizer.zero_grad()
         """
         for optimizer in self.optimizers:
-            optimizer.zero_grad(set_to_none=False)
+            # optimizer.clear_grad(set_to_none=False)
+            optimizer.clear_grad()
 
     def step(self):
         """
@@ -122,12 +123,12 @@ class OptimManager:
         """
         if self.loss_scale_enabled:
             has_overflow = False
-            for optimizer in self.optimizers:
-                try:
-                    check_overflow(optimizer.param_groups)
-                except OverflowError:
-                    has_overflow = True
-                    break
+            # for optimizer in self.optimizers:
+            #     try:
+            #         check_overflow(optimizer._param_groups)
+            #     except OverflowError:
+            #         has_overflow = True
+            #         break
             if has_overflow:
                 print_rank("Gradient overflow, change scale from %lf to %lf" % (self.loss_scale, self.loss_scale / self.loss_scale_factor))
                 with paddle.no_grad():
@@ -140,7 +141,7 @@ class OptimManager:
                 optimizer.step(scale=self.loss_scale)
             else:
                 if self.loss_scale_enabled:
-                    grad_rescale(optimizer.param_groups, self.loss_scale)
+                    grad_rescale(optimizer._param_groups, self.loss_scale)
                 optimizer.step()
 
             if lr_scheduler is not None:

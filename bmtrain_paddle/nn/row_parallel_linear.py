@@ -1,8 +1,8 @@
 import paddle
 # from paddle.nn.parameter import Parameter
 
-import bmtrain as bmt
-from bmtrain.global_var import config
+import bmtrain_paddle as bmt
+from bmtrain_paddle.global_var import config
 from .parallel_linear_func import OpParallelLinear, ReduceType
 
 

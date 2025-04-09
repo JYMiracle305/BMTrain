@@ -1,4 +1,4 @@
-import torch
+import paddle
 from . import distributed, nccl
 from .global_var import config
 import warnings
@@ -12,9 +12,9 @@ def synchronize():
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
 
-    with torch.cuda.stream(config["barrier_stream"]):
-        barrier = torch.cuda.FloatTensor([1])
-        nccl.allReduce(barrier.storage(), barrier.storage(), "sum", config["comm"])
+    with paddle.device.cuda.stream_guard(config["barrier_stream"]):
+        barrier = paddle.to_tensor([1])
+        nccl.allReduce(barrier, barrier, "sum", config["comm"])
     config["barrier_stream"].synchronize()
 
 
@@ -29,7 +29,7 @@ def wait_loader():
     config["calc_stream"].record_event(config["load_event"])
 
 
-def sum_loss(loss: torch.Tensor, comm: Optional[nccl.NCCLCommunicator] = None):
+def sum_loss(loss: paddle.Tensor, comm: Optional[nccl.NCCLCommunicator] = None):
     """
     Sum the loss across all workers.
 
@@ -45,7 +45,7 @@ def sum_loss(loss: torch.Tensor, comm: Optional[nccl.NCCLCommunicator] = None):
     return distributed.all_reduce(loss, "avg", comm)
 
 
-def gather_result(result: torch.Tensor):
+def gather_result(result: paddle.Tensor):
     """
     Gather result across all workers.
     """
@@ -58,10 +58,10 @@ def gather_result(result: torch.Tensor):
         result = result.clone()
 
     output_cuda = True
-    if not result.is_cuda:
+    if not isinstance(result.place, paddle.CUDAPlace):
         result = result.cuda()
         output_cuda = False
-    ret = torch.empty(
+    ret = paddle.empty(
         (result.shape[0] * config["world_size"], *list(result.shape[1:])),
         device=result.device,
         dtype=result.dtype,

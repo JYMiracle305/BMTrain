@@ -3,9 +3,9 @@ import paddle
 import paddle.nn.functional as F
 import math
 
-import bmtrain as bmt
-from bmtrain.global_var import config
-from bmtrain.distributed import all_reduce, all_gather
+import bmtrain_paddle as bmt
+from bmtrain_paddle.global_var import config
+from bmtrain_paddle.distributed import all_reduce, all_gather
 from .parallel_linear_func import OpParallelLinear
 
 

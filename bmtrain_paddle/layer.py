@@ -53,7 +53,7 @@ class DistributedModule(paddle.nn.Layer):
                               missing_keys, unexpected_keys, error_msgs):
         r"""Copies parameters and buffers from :attr:`state_dict` into only
         this module, but not its descendants. This is called on every submodule
-        in :meth:`~torch.nn.Module.load_state_dict`. Metadata saved for this
+        in :meth:`~paddle.nn.Layer.load_state_dict`. Metadata saved for this
         module in input :attr:`state_dict` is provided as :attr:`local_metadata`.
         For state dicts without metadata, :attr:`local_metadata` is empty.
         Subclasses can achieve class-specific backward compatible loading using
@@ -61,7 +61,7 @@ class DistributedModule(paddle.nn.Layer):
 
         .. note::
             :attr:`state_dict` is not the same object as the input
-            :attr:`state_dict` to :meth:`~torch.nn.Module.load_state_dict`. So
+            :attr:`state_dict` to :meth:`~paddle.nn.Layer.load_state_dict`. So
             it can be modified.
 
         Args:
@@ -80,7 +80,7 @@ class DistributedModule(paddle.nn.Layer):
                 keys to this list
             error_msgs (list of str): error messages should be added to this
                 list, and will be reported together in
-                :meth:`~torch.nn.Module.load_state_dict`
+                :meth:`~paddle.nn.Layer.load_state_dict`
         """
         for hook in self._load_state_dict_pre_hooks.values():
             hook(state_dict, prefix, local_metadata, strict, missing_keys, unexpected_keys, error_msgs)
@@ -99,7 +99,7 @@ class DistributedModule(paddle.nn.Layer):
                 # This is used to avoid copying uninitialized parameters into
                 # non-lazy modules, since they dont have the hook to do the checks
                 # in such case, it will error when accessing the .shape attribute.
-                is_param_lazy = torch.nn.parameter.is_lazy(param)
+                is_param_lazy = paddle.nn.parameter.is_lazy(param)
                 # Backward compatibility: loading 1-dim tensor from 0.3.* to version 0.4+
                 if not is_param_lazy and len(param.shape) == 0 and len(input_param.shape) == 1:
                     input_param = input_param[0]
@@ -110,13 +110,13 @@ class DistributedModule(paddle.nn.Layer):
                                       'the shape in current model is {}.'
                                       .format(key, input_param.shape, param.shape))
                     continue
-                verify_shape = torch.Size(param._original_shape if not tp_mode else param._tp_original_shape)
+                verify_shape = paddle.Size(param._original_shape if not tp_mode else param._tp_original_shape)
                 if not is_param_lazy and isinstance(param, DistributedParameter) and input_param.shape != verify_shape:
                     error_msgs.append('size mismatch for {}: copying a param with shape {} from checkpoint, '
                                       'the shape in current model is {}.'
                                       .format(key, input_param.shape, verify_shape))
                 try:
-                    with torch.no_grad():
+                    with paddle.no_grad():
                         if isinstance(param, DistributedParameter):
                             tp_split_dim = param._tp_split_dim
                             if tp_mode and tp_split_dim >= 0:

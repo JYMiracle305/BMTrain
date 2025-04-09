@@ -44,7 +44,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
 
     def _on_justify_scale(self, old_scale, new_scale):
         delta = new_scale / old_scale
-        for group in self.param_groups:
+        for group in self._param_groups:
             for p in group["params"]:
                 if p in self.state:
                     state = self.state[p]
@@ -68,9 +68,9 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                 loss = closure()
 
         # update parameters
-        for group in self.param_groups:
+        for group in self._param_groups:
             for p in group["params"]:
-                if p.grad is not None and p.requires_grad:
+                if p.grad is not None and not p.stop_gradient:
                     if p.grad.is_sparse:
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
@@ -181,7 +181,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
         # deepcopy, to be consistent with module API
         state_dict = deepcopy(state_dict)
         # Validate the state_dict
-        groups = self.param_groups
+        groups = self._param_groups
         saved_groups = state_dict["param_groups"]
 
         if len(groups) != len(saved_groups):

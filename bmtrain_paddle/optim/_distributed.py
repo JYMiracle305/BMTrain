@@ -13,16 +13,16 @@ def state_dict_gather(state_dict):
     for k in param_key:
         if k not in state_dict["state"]:
             state_dict["state"][k] = {
-                "exp_avg": paddle.to_tensor([], dtype='float32', place=paddle.CUDAPlace(0)),
-                "exp_avg_sq": paddle.to_tensor([], dtype='float32', place=paddle.CUDAPlace(0)),
-                "_param_fp32": paddle.to_tensor([], dtype='float32', place=paddle.CUDAPlace(0)),
+                "exp_avg": paddle.to_tensor([], dtype=paddle.float32, place=paddle.CUDAPlace(0)),
+                "exp_avg_sq": paddle.to_tensor([], dtype=paddle.float32, place=paddle.CUDAPlace(0)),
+                "_param_fp32": paddle.to_tensor([], dtype=paddle.float32, place=paddle.CUDAPlace(0)),
                 "step": step,
             }
         v = state_dict["state"][k]
         for name, dtype in [
-            ("exp_avg", 'float32'),
-            ("exp_avg_sq", 'float32'),
-            ("_param_fp32", 'float32'),
+            ("exp_avg", paddle.float32),
+            ("exp_avg_sq", paddle.float32),
+            ("_param_fp32", paddle.float32),
         ]:
             if name in v:
                 with paddle.no_grad():

@@ -1,4 +1,4 @@
-import torch
+import paddle
 from .global_var import config
 from .zero_context import ZeroContext
 
@@ -61,7 +61,7 @@ def zero_post_backward(module, grad_inputs, grad_outputs):
         module._micro_idx -= 1
 
 
-class OneStepNoGradFunc(torch.autograd.Function):
+class OneStepNoGradFunc(paddle.autograd.PyLayer):
     """
     Requires_grad = False for all inputs.
     """
@@ -70,24 +70,24 @@ class OneStepNoGradFunc(torch.autograd.Function):
     def forward(ctx, module, placeholder, *x):
         ctx.x = x
         ctx.module = module
-        ctx.rng_state = torch.cuda.get_rng_state()
+        ctx.rng_state = paddle.device.cuda.get_rng_state()
 
-        with torch.no_grad():
+        with paddle.no_grad():
             out = module._module(*x)
         zero_post_forward(module, None, out)
-        if not isinstance(out, torch.Tensor):
+        if not isinstance(out, paddle.Tensor):
             return tuple(out)
         return out
 
     @staticmethod
     def backward(ctx, grads):
         zero_pre_backward(ctx.module, grads)
-        with torch.random.fork_rng(devices=[torch.cuda.current_device()], enabled=True):
-            torch.cuda.set_rng_state(ctx.rng_state)
+        with paddle.random.fork_rng(devices=[paddle.device.cuda.current_device()], enabled=True):
+            paddle.device.cuda.set_rng_state(ctx.rng_state)
             x = ctx.x
-            with torch.enable_grad():
+            with paddle.enable_grad():
                 out = ctx.module._module(*x)
-                torch.autograd.backward(out, grads)
+                paddle.autograd.backward(out, grads)
         zero_post_backward(ctx.module, grads, None)
         grads = []
         for _ in x:
@@ -95,7 +95,7 @@ class OneStepNoGradFunc(torch.autograd.Function):
         return None, None, *grads
 
 
-class PreHookFunc(torch.autograd.Function):
+class PreHookFunc(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, module, *x):
         ctx.module = module
@@ -108,7 +108,7 @@ class PreHookFunc(torch.autograd.Function):
         return None, *grads
 
 
-class PostHookFunc(torch.autograd.Function):
+class PostHookFunc(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, module, *out):
         ctx.module = module

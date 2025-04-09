@@ -1,6 +1,6 @@
 import paddle
 import paddle.nn.functional as F
-import bmtrain as bmt
+import bmtrain_paddle as bmt
 
 
 class OpLinear(paddle.autograd.PyLayer):
@@ -37,7 +37,7 @@ class Linear(bmt.DistributedModule):
         self.in_features = in_features
         self.out_features = out_features
         self.weight = bmt.DistributedParameter(
-            torch.empty(out_features, in_features, dtype=dtype, device="cuda"),
+            paddle.empty(out_features, in_features, dtype=dtype, device="cuda"),
             init_method=paddle.nn.init.xavier_normal_,
         )
         if bias:

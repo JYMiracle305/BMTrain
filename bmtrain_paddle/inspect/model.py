@@ -1,4 +1,4 @@
-import torch
+import paddle
 from ..store import broadcast_object
 from ..pipe_layer import PipelineTransformerBlockList
 from ..block_layer import Block
@@ -7,13 +7,13 @@ from .. import nccl
 from ..global_var import config
 import fnmatch
 
-def _gather_value(value : torch.Tensor, partition_size, origin_size):
+def _gather_value(value : paddle.Tensor, partition_size, origin_size):
     global_size = partition_size * config['world_size']
 
     storage = value.storage_type()(global_size)
 
     if value.storage().size() != partition_size:
-        tmp_buf = torch.zeros(partition_size, dtype=value.dtype, device=value.device)
+        tmp_buf = paddle.zeros(partition_size, dtype=value.dtype, device=value.device)
         tmp_buf[:value.numel()] = value[:]
         nccl.allGather(
             tmp_buf.storage(),
@@ -27,7 +27,7 @@ def _gather_value(value : torch.Tensor, partition_size, origin_size):
             config['comm']
         )
 
-    output_tensor = torch.tensor([], dtype=value.dtype, device="cuda")
+    output_tensor = paddle.tensor([], dtype=value.dtype, device="cuda")
     output_tensor.set_(storage, 0, origin_size)
 
     return output_tensor
@@ -81,9 +81,9 @@ def inspect_pipeline_transformer_block_list(pipe_model: PipelineTransformerBlock
                     device = _param_buffer[kw_name].device
                     offset = param["offset"]
                     shape = param["shape"]
-                    p = torch.tensor([], dtype=dtype, device=device).set_(_param_buffer[kw_name], offset, shape)
+                    p = paddle.tensor([], dtype=dtype, device=device).set_(_param_buffer[kw_name], offset, shape)
                     if kw_name in _grad_buffer:
-                        g = torch.tensor([], dtype=dtype, device=device).set_(_grad_buffer[kw_name], offset, shape)
+                        g = paddle.tensor([], dtype=dtype, device=device).set_(_grad_buffer[kw_name], offset, shape)
                         info = {
                             "name": abs_name,
                             "shape": tuple(shape),
@@ -161,9 +161,9 @@ def inspect_block(model : Block, param_name : str, prefix : str = ''):
             device = _param_buffer[kw_name].device
             offset = param["offset"]
             shape = param["shape"]
-            p = torch.tensor([], dtype=dtype, device=device).set_(_param_buffer[kw_name], offset, shape)
+            p = paddle.tensor([], dtype=dtype, device=device).set_(_param_buffer[kw_name], offset, shape)
             if kw_name in _grad_buffer:
-                g = torch.tensor([], dtype=dtype, device=device).set_(_grad_buffer[kw_name], offset, shape)
+                g = paddle.tensor([], dtype=dtype, device=device).set_(_grad_buffer[kw_name], offset, shape)
                 ret.append({
                     "name": abs_name,
                     "shape": tuple(shape),
@@ -187,12 +187,12 @@ def inspect_block(model : Block, param_name : str, prefix : str = ''):
                 })
     return ret
 
-@torch.no_grad()
-def inspect_model(model : torch.nn.Module, param_name : str, prefix : str = ''):
+@paddle.no_grad()
+def inspect_model(model : paddle.nn.Layer, param_name : str, prefix : str = ''):
     """Inspect the model and return the summary of the parameters.
 
     Args:
-        model (torch.nn.Module): The model to be inspected.
+        model (paddle.nn.Layer): The model to be inspected.
         param_name (str): The name of the parameter to be inspected. The wildcard '*' can be used to match multiple parameters.
         prefix (str): The prefix of the parameter name.
         
@@ -241,6 +241,6 @@ def inspect_model(model : torch.nn.Module, param_name : str, prefix : str = ''):
                     stats["grad_std"] = 0.
                     stats["grad_mean"] = 0.
                 ret.append(stats)
-        for name, module in model._modules.items():
+        for name, module in model.named_children():
             ret.extend(inspect_model(module, param_name, prefix + name + '.'))
         return ret

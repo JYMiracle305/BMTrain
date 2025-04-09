@@ -104,7 +104,7 @@ def all_gather(x : paddle.Tensor, comm = None):
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
     
-    assert x.is_cuda
+    assert isinstance(x.place, paddle.CUDAPlace)
     return OpAllGather.apply(x, comm)
 
 class OpReduceScatter(paddle.autograd.PyLayer):
@@ -177,7 +177,7 @@ def reduce_scatter(x : paddle.Tensor, op : str = "sum", comm = None):
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
 
-    assert x.is_cuda
+    assert isinstance(x.place, paddle.CUDAPlace)
     return OpReduceScatter.apply(x, op, comm)
 
 class OpAllReduce(paddle.autograd.PyLayer):
@@ -244,7 +244,7 @@ def all_reduce(x : paddle.Tensor, op : str = "sum", comm = None):
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
 
-    assert x.is_cuda
+    assert isinstance(x.place, paddle.CUDAPlace)
     return OpAllReduce.apply(x, op, comm)
 
 

@@ -39,13 +39,29 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
         self.avg_delta = 0
         self.var_delta = 0
-        defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super().__init__(params, defaults)
+        defaults = {
+            'lr': lr,
+            'betas': betas,
+            'eps': eps,
+            'weight_decay': weight_decay
+        }
+        
+        parameters = [
+            {
+                'params': list(params),
+            }
+        ]
+
+        super().__init__(
+            learning_rate=lr,
+            parameters=parameters,
+            weight_decay=weight_decay
+        )
         self._hold_steps = hold_steps
         self._events = {}
         self.record_delta = record_delta
         if self.record_delta:
-            for group in self.param_groups:
+            for group in self._param_groups:
                 for p in group["params"]:
                     setattr(
                         p,
@@ -74,14 +90,14 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
         # parameters to be updated
         update_params = []
 
-        for group in self.param_groups:
+        for group in self._param_groups:
             for p in group["params"]:
-                if p.grad is not None and p.requires_grad:
+                if p.grad is not None and not p.stop_gradient:
                     if p.grad.is_sparse:
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
                         )
-                    if p.dtype not in ['float32', 'float16', 'bfloat16']:
+                    if p.dtype not in [paddle.float32, paddle.float16, paddle.bfloat16]:
                         raise RuntimeError(
                             "Adam only supports fp32, fp16 and bf16 gradients"
                         )
@@ -91,13 +107,9 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                     if len(state) == 0:
                         state["step"] = 0
                         # Exponential moving average of gradient values
-                        state["exp_avg"] = paddle.zeros(
-                            p.size(), dtype='float32', device="cpu"
-                        )  # on host
+                        state["exp_avg"] = paddle.zeros(p.size(), dtype='float32')  # on host
                         # Exponential moving average of squared gradient values
-                        state["exp_avg_sq"] = paddle.zeros(
-                            p.size(), dtype='float32', device="cpu"
-                        )  # on host
+                        state["exp_avg_sq"] = paddle.zeros(p.size(), dtype='float32')  # on host
 
                         if p.dtype == 'float32':
                             state["_param_fp32"] = paddle.empty(
@@ -238,7 +250,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
 
         state_dict = deepcopy(state_dict)
         # Validate the state_dict
-        groups = self.param_groups
+        groups = self._param_groups
         saved_groups = state_dict["param_groups"]
 
         if len(groups) != len(saved_groups):
@@ -363,7 +375,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                 "_param_fp32": state["_param_fp32"],
             }
 
-        param_groups = [pack_group(g) for g in self.param_groups]
+        param_groups = [pack_group(g) for g in self._param_groups]
         # Remap state to use order indices as keys
         packed_state = {
             (param_mappings[id(k)] if isinstance(k, paddle.Tensor) else k): cut_states(v)

@@ -2,38 +2,44 @@ from typing import Dict, Iterable, Iterator, Union, List
 
 from .utils import round_up, tp_split_tensor
 from .global_var import config
-import torch
+import paddle
 from . import nccl
 from .parameter import DistributedParameter, OpAllGather
 from .zero_context import ZeroContext
 from . import hook_func
 import inspect
-from torch.utils.checkpoint import checkpoint
+from paddle.distributed.fleet.utils import recompute
 
 
 def storage_type_cuda(storage_type):
-    """Convert storage_type to cuda storage_type."""
-    STORAGE_MAP = {
-        torch.FloatStorage: torch.cuda.FloatStorage,
-        torch.DoubleStorage: torch.cuda.DoubleStorage,
-        torch.HalfStorage: torch.cuda.HalfStorage,
-        torch.BFloat16Storage: torch.cuda.BFloat16Storage,
-        torch.CharStorage: torch.cuda.CharStorage,
-        torch.ByteStorage: torch.cuda.ByteStorage,
-        torch.ShortStorage: torch.cuda.ShortStorage,
-        torch.IntStorage: torch.cuda.IntStorage,
-        torch.cuda.FloatStorage: torch.cuda.FloatStorage,
-        torch.cuda.DoubleStorage: torch.cuda.DoubleStorage,
-        torch.cuda.HalfStorage: torch.cuda.HalfStorage,
-        torch.cuda.BFloat16Storage: torch.cuda.BFloat16Storage,
-        torch.cuda.CharStorage: torch.cuda.CharStorage,
-        torch.cuda.ByteStorage: torch.cuda.ByteStorage,
-        torch.cuda.ShortStorage: torch.cuda.ShortStorage,
-        torch.cuda.IntStorage: torch.cuda.IntStorage,
+    """将 PyTorch 的存储类型映射到 Paddle 的 dtype 和 GPU 设备"""
+    TYPE_MAP = {
+        # 映射 PyTorch Storage 类型到 Paddle dtype
+        "torch.FloatStorage": "float32",
+        "torch.DoubleStorage": "float64",
+        "torch.HalfStorage": "float16",
+        "torch.BFloat16Storage": "bfloat16",
+        "torch.CharStorage": "int8",
+        "torch.ByteStorage": "uint8",
+        "torch.ShortStorage": "int16",
+        "torch.IntStorage": "int32",
     }
-    if storage_type not in STORAGE_MAP:
-        raise ValueError("Unknown storage type: {}".format(storage_type))
-    return STORAGE_MAP[storage_type]
+    
+    # 获取 PyTorch 存储类型名称
+    type_name = str(storage_type).split("'")[1]
+    
+    if type_name not in TYPE_MAP:
+        raise ValueError(f"Unsupported storage type: {type_name}")
+
+    # 返回创建 GPU 张量的函数
+    def create_gpu_tensor(shape):
+        return paddle.zeros(
+            shape=shape,
+            dtype=TYPE_MAP[type_name],
+            place=paddle.CUDAPlace(0)  # 默认使用第一个 GPU,TODO
+        )
+    
+    return create_gpu_tensor
 
 
 def _get_param_kw(param: DistributedParameter):
@@ -46,13 +52,13 @@ def _get_param_kw(param: DistributedParameter):
     return type_name + grad_name + group_name
 
 
-class Block(torch.nn.Module):
+class Block(paddle.nn.Layer):
     """A block containing two memory-saving methods of ZeRO and checkpoint.
     For details please refer to `ZeRO <https://arxiv.org/abs/1910.02054v3>`_ and
     `Checkpointing <https://pytorch.org/docs/stable/checkpoint.html>`_ .
 
     Args:
-        inner_module (torch.nn.Module): The module to reduce memory usage. All kinds of modules are supported.
+        inner_module (paddle.nn.Layer): The module to reduce memory usage. All kinds of modules are supported.
         use_checkpoint (boolean): use checkpoint or not. Default True.
         zero_level (int): 2 (ZeRO-2) indicates that optimizer states and gradients are partitioned across the process,
             3 (ZeRO-3) means that the parameters are partitioned one the basis of ZeRO-2. Default 3.
@@ -69,7 +75,7 @@ class Block(torch.nn.Module):
 
     def __init__(
         self,
-        inner_module: torch.nn.Module,
+        inner_module: paddle.nn.Layer,
         use_checkpoint=True,
         zero_level=3,
         initialized=False,
@@ -83,7 +89,7 @@ class Block(torch.nn.Module):
         self._backward_block_ctx = None
 
         self._param_info = []
-        self._storage_params: Dict[str, torch.nn.Parameter] = {}
+        self._storage_params: Dict[str, paddle.Tensor] = {}
         self._storage_info = {}
         self._ready = False
 
@@ -173,8 +179,8 @@ class Block(torch.nn.Module):
             device = storage_param_buffer.device
 
             # bind storage to buffer tensor
-            storage_param = torch.nn.Parameter(
-                torch.tensor([], dtype=dtype, device=device).set_(storage_param_buffer)
+            storage_param = paddle.Tensor(
+                paddle.Tensor([], dtype=dtype, device=device).set_(storage_param_buffer)
             )
             if val["requires_grad"]:
                 storage_param.requires_grad_(True)
@@ -209,7 +215,7 @@ class Block(torch.nn.Module):
             storage_end = self._storage_info[kw_name]["end"]
 
             # make parameter contiguous in storage
-            with torch.no_grad():
+            with paddle.no_grad():
                 contiguous_param = OpAllGather.apply(param)
 
             if not (param_st >= storage_end or param_end <= storage_st):
@@ -226,7 +232,7 @@ class Block(torch.nn.Module):
                 # PyTorch 1.11 changed the API of storage.__getitem__
                 d_dtype = self._storage_params[kw_name].dtype
                 d_device = self._storage_params[kw_name].device
-                param.data = torch.tensor(
+                param.data = paddle.Tensor(
                     [], dtype=param.dtype, device=param.device
                 ).set_(
                     self._storage_params[kw_name].storage(),
@@ -237,12 +243,12 @@ class Block(torch.nn.Module):
                 self._param_info[-1]["end"] = (to_offset_end - to_offset_st,)
                 setattr(param, "_start_partition", offset_st)
                 setattr(param, "_end_partition", offset_end)
-                param.data[:] = torch.tensor([], dtype=d_dtype, device=d_device).set_(
+                param.data[:] = paddle.Tensor([], dtype=d_dtype, device=d_device).set_(
                     contiguous_param.storage(), offset_st, (offset_end - offset_st,)
                 )[:]
                 del contiguous_param
             else:
-                param.data = torch.tensor([], dtype=param.dtype, device=param.device)
+                param.data = paddle.Tensor([], dtype=param.dtype, device=param.device)
                 setattr(param, "_start_partition", None)
                 setattr(param, "_end_partition", 0)
             # clear parameter data, but keep the dtype and device
@@ -282,7 +288,7 @@ class Block(torch.nn.Module):
         grad_index = []
         arg_list = list(args)
         for i, arg in enumerate(args):
-            if arg is not None and isinstance(arg, torch.Tensor) and arg.requires_grad:
+            if arg is not None and isinstance(arg, paddle.Tensor) and arg.requires_grad:
                 grad_tensors.append(arg)
                 grad_index.append(i)
         grad_tensors = tuple(grad_tensors)
@@ -304,9 +310,9 @@ class Block(torch.nn.Module):
 
     def post_hook(self, out):
         """Hook function after forward."""
-        tuple_out = (out,) if isinstance(out, torch.Tensor) else out
+        tuple_out = (out,) if isinstance(out, paddle.Tensor) else out
         post_out = hook_func.PostHookFunc.apply(self, *tuple_out)
-        if isinstance(out, torch.Tensor) and isinstance(post_out, tuple):
+        if isinstance(out, paddle.Tensor) and isinstance(post_out, tuple):
             return post_out[0]
         post_out = tuple(post_out)
         return post_out
@@ -315,15 +321,16 @@ class Block(torch.nn.Module):
         arg_list = self.pre_hook(*args)
 
         if self.all_input_no_grad and not self.all_param_no_grad:
-            placeholder = torch.tensor([], requires_grad=torch.is_grad_enabled())
+            placeholder = paddle.Tensor([], requires_grad=paddle.is_grad_enabled())
             return hook_func.OneStepNoGradFunc.apply(self, placeholder, *arg_list)
 
-        if self._use_checkpoint:
-            out = checkpoint(
-                self._module, *arg_list, use_reentrant=not self.all_input_no_grad
-            )
-        else:
-            out = self._module(*arg_list)
+        # if self._use_checkpoint:
+        #     out = checkpoint(
+        #         self._module, *arg_list, use_reentrant=not self.all_input_no_grad
+        #     )
+        # else:
+        #     out = self._module(*arg_list)
+        out = self._module(*arg_list)
 
         return self.post_hook(out)
 
@@ -348,7 +355,7 @@ class Block(torch.nn.Module):
 
     def state_dict(self, destination=None, prefix="", keep_vars=False):
         # gather here
-        with torch.no_grad():
+        with paddle.no_grad():
             with ZeroContext(self):
                 return self._module.state_dict(
                     destination=destination, prefix=prefix, keep_vars=keep_vars
@@ -376,7 +383,7 @@ class Block(torch.nn.Module):
                 if input_param.__class__.__name__ == "DistributedTensorWrapper":
                     input_param = input_param.broadcast()
 
-                verify_shape = torch.Size(
+                verify_shape = paddle.Size(
                     it["shape"] if not tp_mode else param._tp_original_shape
                 )
                 if input_param.shape != verify_shape:
@@ -423,11 +430,11 @@ class Block(torch.nn.Module):
                 # PyTorch 1.11 changed the API of storage.__getitem__
                 d_dtype = self._storage_params[kw_name].dtype
                 d_device = self._storage_params[kw_name].device
-                torch.tensor([], dtype=d_dtype, device=d_device).set_(
+                paddle.Tensor([], dtype=d_dtype, device=d_device).set_(
                     self._storage_params[kw_name].storage(),
                     to_offset_st,
                     (to_offset_end - to_offset_st,),
-                )[:] = torch.tensor([], dtype=d_dtype, device=d_device).set_(
+                )[:] = paddle.Tensor([], dtype=d_dtype, device=d_device).set_(
                     contiguous_param.storage(), offset_st, (offset_end - offset_st,)
                 )[
                     :
@@ -476,7 +483,7 @@ class Block(torch.nn.Module):
                             )
                         )
                     try:
-                        with torch.no_grad():
+                        with paddle.no_grad():
                             param._copy_data(input_param)
                     except Exception as ex:
                         error_msgs.append(
@@ -519,7 +526,7 @@ class Block(torch.nn.Module):
                 and param._init_method is not None
             ):
                 # initialzie here
-                tmp_tensor = torch.empty(
+                tmp_tensor = paddle.empty(
                     param._tp_original_shape, device=param.device, dtype=param.dtype
                 )
                 param._init_method(tmp_tensor)
@@ -548,7 +555,7 @@ class Block(torch.nn.Module):
                 # PyTorch 1.11 changed the API of storage.__getitem__
                 d_dtype = self._storage_params[kw_name].dtype
                 d_device = self._storage_params[kw_name].device
-                param.data[:] = torch.tensor([], dtype=d_dtype, device=d_device).set_(
+                param.data[:] = paddle.Tensor([], dtype=d_dtype, device=d_device).set_(
                     tmp_tensor.storage(), offset_st, (offset_end - offset_st,)
                 )[:]
                 del tmp_tensor
@@ -559,7 +566,7 @@ class Block(torch.nn.Module):
         # compitibity with torch 2.0
         if (
             "remove_duplicate"
-            in inspect.signature(torch.nn.Module._named_members).parameters
+            in inspect.signature(paddle.nn.Layer._named_members).parameters
             and "remove_duplicate" not in kwargs
         ):
             kwargs["remove_duplicate"] = True
@@ -644,7 +651,7 @@ def _block_wrapper(module, module_dict: dict, mode="BLOCK"):
     return new_module
 
 
-class TransformerBlockList(torch.nn.Module):
+class TransformerBlockList(paddle.nn.Layer):
     r"""
     TransformerBlockList is a list of bmt.Block.
 
@@ -710,7 +717,7 @@ class TransformerBlockList(torch.nn.Module):
 
         if return_hidden_states:
             hidden_states = [
-                torch.stack(hidden_states[i :: self.num_hidden], dim=0)
+                paddle.stack(hidden_states[i :: self.num_hidden], dim=0)
                 for i in range(self.num_hidden)
             ]
 

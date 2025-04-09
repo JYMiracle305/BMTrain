@@ -1,9 +1,7 @@
 from collections import OrderedDict
 import copy
-import torch
-import copy
+import paddle
 from typing import Dict, Iterable, Iterator, Tuple, Union, List
-import torch
 
 from .distributed import all_gather, broadcast, all_reduce, send_activations, recv_activations 
 from .global_var import config
@@ -14,7 +12,7 @@ from .zero_context import (
 from . import debug
 from .block_layer import Block, round_up, _get_param_kw, _block_wrapper
 
-class PipePreFunction(torch.autograd.Function):
+class PipePreFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, hidden_state, *args):
         hidden_state_list = all_gather(hidden_state.clone(), config["pipe_comm"])
@@ -30,7 +28,7 @@ class PipePreFunction(torch.autograd.Function):
         args_list = [[] for _ in range(num_micros)]
         input_requires_grad = []
         for arg in args:
-            if torch.is_tensor(arg):
+            if paddle.is_tensor(arg):
                 arg_all = all_gather(arg, config['pipe_comm'])
                 if arg.dim() == hidden_state.dim() and arg.shape[0] == batch_size:
                     batch_related_rule.append(True)
@@ -62,7 +60,7 @@ class PipePreFunction(torch.autograd.Function):
         num_micros = config['micros']
         for idx,requires_grad in enumerate(ctx.input_requires_grad):
             if requires_grad:
-                grad = torch.cat([ctx.args_list[m][idx].grad for m in range(num_micros)], dim=0)
+                grad = paddle.cat([ctx.args_list[m][idx].grad for m in range(num_micros)], dim=0)
                 grad = all_reduce(grad, "sum", config["pipe_comm"])
                 split_size = topo.stages if ctx.batch_related[idx] else num_micros
                 grad = grad.chunk(split_size)
@@ -75,7 +73,7 @@ class PipePreFunction(torch.autograd.Function):
         arg_grads.append(None) #for append(batch_related)
         return grads.chunk(topo.stages, dim=0)[topo.stage_id], *arg_grads
 
-class PipePostFunction(torch.autograd.Function):
+class PipePostFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, last_hidden, hidden_states=None, forward_stage_ranges=None, backward_stage_ranges=None, last_hidden_shape=None, return_hidden_states=False):
         topo = config['topology']
@@ -95,12 +93,12 @@ class PipePostFunction(torch.autograd.Function):
                     middle_hidden = hidden_states
                 else:
                     middle_shape = (forward_stage_ranges[stage_id],) + last_hidden_shape
-                    middle_hidden = torch.zeros(middle_shape, device=hidden_states.device, dtype=hidden_states.dtype)
+                    middle_hidden = paddle.zeros(middle_shape, device=hidden_states.device, dtype=hidden_states.dtype)
                 middle_hidden = broadcast(middle_hidden, stage_id, config["pipe_comm"])
                 middle_hidden = middle_hidden.chunk(ctx.stages, dim=1)
                 middle_hidden = middle_hidden[ctx.stage_id].clone()
                 middle_hiddens.append(middle_hidden)
-            middle_hiddens = torch.cat(middle_hiddens, dim=0)
+            middle_hiddens = paddle.cat(middle_hiddens, dim=0)
             middle_hiddens.requires_grad_()
             return output, middle_hiddens
         else:
@@ -123,7 +121,7 @@ class PipePostFunction(torch.autograd.Function):
         else:
              return grad_list
 
-class StagePreFunction(torch.autograd.Function):
+class StagePreFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, input, stage_id):
         ctx.stage_id = stage_id
@@ -139,14 +137,14 @@ class StagePreFunction(torch.autograd.Function):
     def backward(ctx, grad_outputs):
         if not ctx.is_first_stage:
             send_data = grad_outputs[0] if isinstance(grad_outputs, tuple) else grad_outputs 
-            current_stream = torch.cuda.current_stream()
-            with torch.cuda.stream(config['pp_comm_stream']):
+            current_stream = paddle.device.cuda.current_stream()
+            with paddle.device.cuda.stream_guard(config['pp_comm_stream']):
                 config['pp_comm_stream'].wait_stream(current_stream) 
                 send_data.record_stream(config['pp_comm_stream'])
                 send_activations(send_data, ctx.stage_id - 1, config['pipe_comm'])
         return grad_outputs, None
 
-class StagePostFunction(torch.autograd.Function):
+class StagePostFunction(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, outputs, stage_id):
         ctx.stage_id = stage_id
@@ -154,8 +152,8 @@ class StagePostFunction(torch.autograd.Function):
         ctx.is_last_stage = stage_id == config['pipe_size'] - 1
         if not ctx.is_last_stage:
             send_data = outputs[0] if isinstance(outputs, tuple) else outputs
-            current_stream = torch.cuda.current_stream()
-            with torch.cuda.stream(config['pp_comm_stream']):
+            current_stream = paddle.device.cuda.current_stream()
+            with paddle.device.cuda.stream_guard(config['pp_comm_stream']):
                 config['pp_comm_stream'].wait_stream(current_stream) 
                 send_data.record_stream(config['pp_comm_stream'])
                 send_activations(send_data.detach(), stage_id + 1, config['pipe_comm'])
@@ -169,7 +167,7 @@ class StagePostFunction(torch.autograd.Function):
         return grad_outputs, None
 
 
-class PipelineTransformerBlockList(torch.nn.Module):
+class PipelineTransformerBlockList(paddle.nn.Layer):
     r"""
     TransformerBlockList is a list of Blocks.
 
@@ -190,7 +188,7 @@ class PipelineTransformerBlockList(torch.nn.Module):
     """
     _modules: Dict[str, Block]
 
-    def __init__(self, modules: Iterable[torch.nn.Module], num_hidden=1) -> None:
+    def __init__(self, modules: Iterable[paddle.nn.Layer], num_hidden=1) -> None:
         super().__init__()
         self.num_hidden = num_hidden 
         self._modules = {}
@@ -253,13 +251,13 @@ class PipelineTransformerBlockList(torch.nn.Module):
 
             outputs.append(hidden_state)
             if return_hidden_states:
-                hidden_states.append(torch.stack(micro_hidden_states, dim=0))
+                hidden_states.append(paddle.stack(micro_hidden_states, dim=0))
 
-        last_hidden = torch.cat(outputs, dim=0)
+        last_hidden = paddle.cat(outputs, dim=0)
         last_hidden_shape = last_hidden.shape
 
         if return_hidden_states:
-            hidden_states = torch.cat(hidden_states, dim=1) 
+            hidden_states = paddle.cat(hidden_states, dim=1) 
             forward_stage_ranges = []
             backward_stage_ranges = []
             for stage_id in range(self.stages):
@@ -297,7 +295,7 @@ class PipelineTransformerBlockList(torch.nn.Module):
             dst._metadata = OrderedDict()
 
             if idx in self.layer_ids:
-                with torch.no_grad():
+                with paddle.no_grad():
                     with ZeroContext(module, pipe=True):
                         module._module.state_dict(destination=dst, prefix=name, keep_vars=False)
 

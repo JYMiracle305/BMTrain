@@ -1,7 +1,7 @@
 from .. import C
 import paddle
 
-CHECK_INPUT = lambda x: x.is_contiguous() and x.is_cuda
+CHECK_INPUT = lambda x: x.is_contiguous() and isinstance(x.place, paddle.CUDAPlace)
 
 
 def bf16_from_fp32(param_fp32):
@@ -40,15 +40,15 @@ def adam_cpu(
     assert g_fp16.is_contiguous(), "g_fp16 must be contiguous"
     assert m_fp32.is_contiguous(), "m_fp32 must be contiguous"
     assert v_fp32.is_contiguous(), "v_fp32 must be contiguous"
-    assert param_fp32.dtype == 'float32', "param_fp32 must be float32 tensor"
+    assert param_fp32.dtype == paddle.float32, "param_fp32 must be float32 tensor"
     assert (
-        param_fp16.dtype == 'float16' or param_fp16.dtype == 'bfloat16'
+        param_fp16.dtype == paddle.float16 or param_fp16.dtype == paddle.bfloat16
     ), "param_fp16 must be float16/bfloat16 tensor"
     assert (
-        g_fp16.dtype == 'float16' or g_fp16.dtype == 'bfloat16'
+        g_fp16.dtype == paddle.float16 or g_fp16.dtype == paddle.bfloat16
     ), "g_fp16 must be float16/bfloat16 tensor"
-    assert m_fp32.dtype == 'float32', "m_fp32 must be float32 tensor"
-    assert v_fp32.dtype == 'float32', "v_fp32 must be float32 tensor"
+    assert m_fp32.dtype == paddle.float32, "m_fp32 must be float32 tensor"
+    assert v_fp32.dtype == paddle.float32, "v_fp32 must be float32 tensor"
     assert isinstance(param_fp32.place, paddle.CPUPlace), "param_fp32 must be a cpu tensor"
     assert isinstance(param_fp16.place, paddle.CPUPlace), "param_fp16 must be a cpu tensor"
     assert isinstance(g_fp16.place, paddle.CPUPlace), "g_fp16 must be a cpu tensor"
@@ -68,14 +68,14 @@ def adam_cpu(
     ), "param_fp32 and v_fp32 must have the same number of elements"
     if delta_info is not None:
         assert delta_info.is_contiguous(), "delta_info must be contiguous"
-        assert delta_info.dtype == 'float32', "delta_info must be float32 tensor"
+        assert delta_info.dtype == paddle.float32, "delta_info must be float32 tensor"
         assert isinstance(delta_info.place, paddle.CPUPlace), "delta_info must be a cpu tensor"
         assert delta_info.numel() == 4, "delta_info have a length of 4"
     bias_correction1 = 1 - beta1**step
     bias_correction2 = 1 - beta2**step
-    if g_fp16.dtype == 'float16':
+    if g_fp16.dtype == paddle.float16:
         launcher = C.adam_cpu_fp16_launcher
-    elif g_fp16.dtype == 'bfloat16':
+    elif g_fp16.dtype == paddle.bfloat16:
         if not C.is_bf16_supported():
             raise NotImplementedError(f"bfloat16 is not supported on current GPU")
         launcher = C.adam_cpu_bf16_launcher
@@ -117,11 +117,11 @@ def adam_fp16(
     assert CHECK_INPUT(g_fp16), "g_fp16 must be contiguous and on cuda"
     assert CHECK_INPUT(m_fp16), "m_fp32 must be contiguous and on cuda"
     assert CHECK_INPUT(v_fp32), "v_fp32 must be contiguous and on cuda"
-    assert param_fp32.dtype == 'float32', "param_fp32 must be float32 tensor"
-    assert param_fp16.dtype == 'float16', "param_fp16 must be float16 tensor"
-    assert g_fp16.dtype == 'float16', "g_fp16 must be float16 tensor"
-    assert m_fp16.dtype == 'float16', "m_fp16 must be float16 tensor"
-    assert v_fp32.dtype == 'float32', "v_fp32 must be float32 tensor"
+    assert param_fp32.dtype == paddle.float32, "param_fp32 must be float32 tensor"
+    assert param_fp16.dtype == paddle.float16, "param_fp16 must be float16 tensor"
+    assert g_fp16.dtype == paddle.float16, "g_fp16 must be float16 tensor"
+    assert m_fp16.dtype == paddle.float16, "m_fp16 must be float16 tensor"
+    assert v_fp32.dtype == paddle.float32, "v_fp32 must be float32 tensor"
     assert (
         param_fp32.numel() == param_fp16.numel()
     ), "param_fp32 and param_fp16 must have the same number of elements"
@@ -175,11 +175,11 @@ def adam_bf16(
     assert CHECK_INPUT(g_bf16), "g_bf16 must be contiguous and on cuda"
     assert CHECK_INPUT(m_fp32), "m_fp32 must be contiguous and on cuda"
     assert CHECK_INPUT(v_fp32), "v_fp32 must be contiguous and on cuda"
-    assert param_fp32.dtype == 'float32', "param_fp32 must be float32 tensor"
-    assert param_bf16.dtype == 'bfloat16', "param_fp16 must be float16 tensor"
-    assert g_bf16.dtype == 'bfloat16', "g_bf16 must be bfloat16 tensor"
-    assert m_fp32.dtype == 'float32', "m_fp32 must be bfloat16 tensor"
-    assert v_fp32.dtype == 'float32', "v_fp32 must be float32 tensor"
+    assert param_fp32.dtype == paddle.float32, "param_fp32 must be float32 tensor"
+    assert param_bf16.dtype == paddle.bfloat16, "param_fp16 must be float16 tensor"
+    assert g_bf16.dtype == paddle.bfloat16, "g_bf16 must be bfloat16 tensor"
+    assert m_fp32.dtype == paddle.float32, "m_fp32 must be bfloat16 tensor"
+    assert v_fp32.dtype == paddle.float32, "v_fp32 must be float32 tensor"
     assert (
         param_fp32.numel() == param_bf16.numel()
     ), "param_fp32 and param_bf16 must have the same number of elements"

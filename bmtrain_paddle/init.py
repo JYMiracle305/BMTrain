@@ -1,7 +1,5 @@
 import datetime
 import random
-# import torch
-# import torch.distributed as dist
 import os
 from .utils import print_dict
 import ctypes
@@ -67,7 +65,7 @@ def init_distributed(
     local_rank = int(os.environ.get("LOCAL_RANK", "0"))
     rank = int(os.environ.get("RANK", "0"))
     world_size = int(os.environ.get("WORLD_SIZE", "1"))
-    local_size = int(os.environ.get("LOCAL_WORLD_SIZE", "1"))
+    local_size = int(os.environ.get("PADDLE_TRAINERS_NUM", "1"))
     if "MASTER_ADDR" not in os.environ:
         os.environ["MASTER_ADDR"] = "localhost"
     if "MASTER_PORT" not in os.environ:
@@ -78,7 +76,7 @@ def init_distributed(
     timeout = datetime.timedelta(seconds=1800)
 
     # 使用Paddle的分布式初始化
-    # fleet.init(is_collective=True)
+    fleet.init(is_collective=True)
 
     # torch.cuda.set_device(local_rank)
     paddle.set_device(f'gpu:{local_rank}')
@@ -117,7 +115,7 @@ def init_distributed(
     cpus_this_worker = None
 
     all_available_cpus = sorted(list(os.sched_getaffinity(0)))
-
+    print(f"len(all_available_cpus) {len(all_available_cpus) }, local_size:{local_size}")
     cpus_per_worker = len(all_available_cpus) // local_size
 
     if cpus_per_worker < 1:
@@ -128,9 +126,10 @@ def init_distributed(
         cpus_this_worker = all_available_cpus[
             local_rank * cpus_per_worker : (local_rank + 1) * cpus_per_worker
         ]
+        print(f"local_rank: {local_rank}, cpus_this_worker: {cpus_this_worker}")
         os.sched_setaffinity(0, cpus_this_worker)
         # torch.set_num_threads(len(cpus_this_worker))
-        paddle.set_num_threads(len(cpus_this_worker))
+        paddle.base.core.set_num_threads(len(cpus_this_worker))
 
     # torch.manual_seed(seed)
     paddle.seed(seed + rank) 
@@ -220,7 +219,7 @@ def init_distributed(
                     "cpus": cpus_this_worker,
                 },
             )
-        synchronize()
+        # synchronize()
 
 
 class topology:

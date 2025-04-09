@@ -1,9 +1,9 @@
 import paddle
 import paddle.nn.functional as F
-from bmtrain.global_var import config
+import bmtrain_paddle as bmt
+from bmtrain_paddle.global_var import config
 from ..distributed import all_gather, all_reduce
 from .. import nccl
-import bmtrain as bmt
 from enum import Enum
 
 
@@ -46,7 +46,7 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
 
     # async all_gather and overalap with linear
     for i in range(rounds - 1):
-        with paddle.device.cuda.stream(comm_stream):
+        with paddle.device.cuda.stream_guard(comm_stream):
             inputs[i + 1].record_stream(comm_stream)
             input = all_gather(inputs[i + 1], config["tp_comm"])
             input = input.flatten(0, 1)
@@ -84,7 +84,7 @@ def async_reduce_scatter_linear_func(input, weight, bias, async_chunks=2):
             input[j] = inputs[j * rounds + i]
         input = paddle.cat(input, dim=0)
         out = F.linear(input, weight, bias)
-        with paddle.device.cuda.stream(comm_stream):
+        with paddle.device.cuda.stream_guard(comm_stream):
             comm_stream.wait_stream(current_stream)
             out.record_stream(comm_stream)
             shape = list(out.shape)
@@ -127,7 +127,7 @@ def async_all_gather_linear_backward_func(
     inputs = [None] * rounds
     comm_stream.wait_stream(current_stream)
     if weight.requires_grad:
-        with paddle.device.cuda.stream(comm_stream):
+        with paddle.device.cuda.stream_guard(comm_stream):
             input.record_stream(comm_stream)
             input_list = [None] * tp_size * rounds
             tp_inputs = input.chunk(tp_size, dim=0)
@@ -165,7 +165,7 @@ def async_all_gather_linear_backward_func(
 
     # async all_gather and overalap with matmul
     for i in range(rounds - 1):
-        with paddle.device.cuda.stream(comm_stream):
+        with paddle.device.cuda.stream_guard(comm_stream):
             local_grad_outs[i + 1].record_stream(comm_stream)
             grad_out = all_gather(local_grad_outs[i + 1], config["tp_comm"])
             for j in range(tp_size):
@@ -288,7 +288,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         if input.requires_grad or weight.requires_grad:
             if ctx['gather_input']:
                 # async the all_gather
-                with paddle.device.cuda.stream(config["tp_comm_stream"]):
+                with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     input.record_stream(config["tp_comm_stream"])
                     config["tp_comm_stream"].wait_stream(current_stream)
                     all_input = preprocess_input(
@@ -304,7 +304,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
             grad_input = paddle.zeros_like(input)
             if ctx['gather_input']:
                 # async the reduce_scatter
-                with paddle.device.cuda.stream(config["tp_comm_stream"]):
+                with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
                     grad_input.record_stream(config["tp_comm_stream"])
                     grad_all_input.record_stream(config["tp_comm_stream"])
@@ -315,7 +315,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
                         config["tp_comm"],
                     )
             elif ctx['reduce_output_type'] is None:
-                with paddle.device.cuda.stream(config["tp_comm_stream"]):
+                with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
                     grad_input.record_stream(config["tp_comm_stream"])
                     nccl.allReduce(
@@ -329,7 +329,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
                 grad_input = grad_all_input
 
             if ctx['split_input']:
-                with paddle.device.cuda.stream(config["tp_comm_stream"]):
+                with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
                     grad_input.record_stream(config["tp_comm_stream"])
                     grad_input = all_gather(grad_input, config["tp_comm"])

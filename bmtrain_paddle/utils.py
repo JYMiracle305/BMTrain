@@ -1,4 +1,4 @@
-import torch
+import paddle
 import sys
 from typing import Any, Dict, Iterable, Optional
 from .global_var import config
@@ -14,20 +14,20 @@ def check_torch_version(version_str):
     Checks if the current torch version is greater than or equal to the given version.
     version_str (str): The version to compare with, in the format of "x.y.z" ,and the func will convert it into a int value of x*100+y*10+z.
     """
-    version_int_arr = [int(v) for v in version_str.split(".")]
+    # version_int_arr = [int(v) for v in version_str.split(".")]
 
-    version_int = (
-        version_int_arr[0] * 10000 + version_int_arr[1] * 100 + version_int_arr[2]
-    )
-    torch_version = torch.__version__.split("+")[0]
-    current_version_int_arr = [int(v) for v in torch_version.split(".")]
-    current_version_int = (
-        current_version_int_arr[0] * 10000
-        + current_version_int_arr[1] * 100
-        + current_version_int_arr[2]
-    )
-    return current_version_int - version_int
-
+    # version_int = (
+    #     version_int_arr[0] * 10000 + version_int_arr[1] * 100 + version_int_arr[2]
+    # )
+    # torch_version = torch.__version__.split("+")[0]
+    # current_version_int_arr = [int(v) for v in torch_version.split(".")]
+    # current_version_int = (
+    #     current_version_int_arr[0] * 10000
+    #     + current_version_int_arr[1] * 100
+    #     + current_version_int_arr[2]
+    # )
+    # return current_version_int - version_int
+    return 1.16
 
 def load_nccl_pypi():
     """
@@ -121,17 +121,17 @@ def see_memory(message, detail=False):
     """
     print_rank(message)
     if detail:
-        print_rank(torch.cuda.memory_summary())
+        print_rank(paddle.device.cuda.memory_summary())
     else:
         print_rank(
             f"""
         =======================================================================================
-        memory_allocated {round(torch.cuda.memory_allocated() / (1024 * 1024 * 1024),2 )} GB
-        max_memory_allocated {round(torch.cuda.max_memory_allocated() / (1024 * 1024 * 1024),2)} GB
+        memory_allocated {round(paddle.device.cuda.memory_allocated() / (1024 * 1024 * 1024),2 )} GB
+        max_memory_allocated {round(paddle.device.cuda.max_memory_allocated() / (1024 * 1024 * 1024),2)} GB
         =======================================================================================
         """
         )
-    torch.cuda.reset_peak_memory_stats()
+    paddle.device.cuda.reset_peak_memory_stats()
 
 
 def tp_split_tensor(tensor, split_dim):
@@ -145,13 +145,27 @@ def tp_split_tensor(tensor, split_dim):
     """
     tensor_list = tensor.chunk(config["tp_size"], dim=split_dim)
     sub_tensor = tensor_list[config["topology"].tp_id].contiguous()
-    tmp_tensor = torch.empty(
+    tmp_tensor = paddle.empty(
         sub_tensor.shape, device=sub_tensor.device, dtype=sub_tensor.dtype
     )
     tmp_tensor.copy_(sub_tensor)
     return tmp_tensor
 
-
+def get_ptr(tensor: paddle.Tensor) -> int:
+    # 获取 Tensor 底层数据指针 (需确保 Tensor 在 GPU 上)
+    if not tensor.place.is_gpu_place():
+        raise ValueError("Tensor 必须位于 GPU")
+    
+    class CUDAPtrHolder(ctypes.Structure):
+        _fields_ = [("data", ctypes.c_void_p)]
+    
+    holder = CUDAPtrHolder()
+    ctypes.pythonapi.PyCapsule_GetPointer(
+        ctypes.py_object(tensor.value().get_tensor()._get_capsule()),
+        ctypes.c_char_p(b"gpu_mem"),
+        ctypes.byref(holder)
+    )
+    return holder.data
 class AverageRecorder:
     """A utility class to record the average value of a quantity over time.
 

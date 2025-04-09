@@ -1,8 +1,8 @@
 from typing import Optional
 import paddle
 from . import _function as F
-from bmtrain.global_var import config
-from bmtrain.distributed import all_gather, all_reduce
+from bmtrain_paddle.global_var import config
+from bmtrain_paddle.distributed import all_gather, all_reduce
 
 class OpFusedCrossEntropy(paddle.autograd.PyLayer):
     """
@@ -235,10 +235,10 @@ class FusedCrossEntropy(paddle.nn.Layer):
         if self.parallel:
             ret = VPFusedCrossEntropy.apply(input, target.long())
         else:
-            if input.dtype == 'float32':
+            if input.dtype == paddle.float32:
                 return paddle.nn.functional.cross_entropy(
                         input, 
-                        target.long(),
+                        target.astype('int64'),
                         weight=self.weight, 
                         ignore_index=self.ignore_index, 
                         reduction=self.reduction,
