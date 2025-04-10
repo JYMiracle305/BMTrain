@@ -208,6 +208,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
 
     @staticmethod
     def forward(
+        ctx,
         input,
         weight,
         bias=None,
@@ -238,7 +239,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         elif reduce_output_type == ReduceType.REDUCE_SCATTER:
             return async_reduce_scatter_linear_func(
                 input, weight, bias, async_gather_chunks
-            ), ctx
+            )
         else:
             all_input = preprocess_input(input, ctx['gather_input'], ctx['split_input'])
             out = F.linear(all_input, weight, bias)
@@ -251,11 +252,11 @@ class OpParallelLinear(paddle.autograd.PyLayer):
             )
 
         if reduce_output_type is None:
-            return out, ctx
+            return out
 
         if reduce_output_type == ReduceType.ALL_REDUCE:
             nccl.allReduce(out.storage(), out.storage(), "sum", config["tp_comm"])
-            return out, ctx
+            return out
         else:
             assert False, "no support reduce type{}".format(reduce_output_type)
 

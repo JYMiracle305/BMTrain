@@ -1,6 +1,5 @@
 from typing import Optional
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distributed import fleet
 from paddle.distributed.fleet.layers.mpu import mp_ops
@@ -8,7 +7,17 @@ from paddle.distributed.fleet.utils import recompute
 
 from paddle.distributed.fleet.layers.mpu import ColumnParallelLinear, RowParallelLinear
 
-class Attention(nn.Layer):
+import bmtrain_paddle as bmt
+from bmtrain_paddle.nn import (
+    Linear,
+    ColumnParallelLinear,
+    RowParallelLinear,
+)
+import math
+from bmtrain_paddle.global_var import config
+from bmtrain_paddle.distributed import all_gather 
+
+class Attention(bmt.DistributedModule):
     def __init__(self, 
                  dim_model: int, 
                  dim_head: int, 
@@ -21,31 +30,20 @@ class Attention(nn.Layer):
         self.dim_head = dim_head
         self.dim_model = dim_model
 
-        tp_size = fleet.get_hybrid_communicate_group().get_model_parallel_world_size()
-        tp_rank = fleet.get_hybrid_communicate_group().get_model_parallel_rank()
         # print("dtype:", dtype, dtype.type())
         # datatype = "float16" if dtype == float16 else "float32"
-        if tp_size > 1:
-            self.project_q = ColumnParallelLinear(dim_model, dim_head * num_heads, has_bias=bias)
-            self.project_k = ColumnParallelLinear(dim_model, dim_head * num_heads, has_bias=bias)
-            self.project_v = ColumnParallelLinear(dim_model, dim_head * num_heads, has_bias=bias)
-            self.project_out = RowParallelLinear(dim_head * num_heads, dim_model, has_bias=bias)
+        if config['tp_size'] > 1:
+            self.project_q = ColumnParallelLinear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype, gather_input=False)
+            self.project_k = ColumnParallelLinear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype, gather_input=False)
+            self.project_v = ColumnParallelLinear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype, gather_input=False)
+            self.project_out = RowParallelLinear(dim_head * num_heads, dim_model, bias=bias, dtype=dtype)
         else:
-            paddle.set_default_dtype(dtype)
-            # weight_attr = paddle.ParamAttr(dtype)
-            # bias_attr = paddle.ParamAttr(dtype) if bias else False
+            self.project_q = Linear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype)
+            self.project_k = Linear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype)
+            self.project_v = Linear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype)
+            self.project_out = Linear(dim_head * num_heads, dim_model, bias=bias, dtype=dtype)
 
-            # self.project_q = nn.Linear(dim_model, dim_head * num_heads, weight_attr=weight_attr, bias_attr=bias_attr)
-            # self.project_k = nn.Linear(dim_model, dim_head * num_heads, weight_attr=weight_attr, bias_attr=bias_attr)
-            # self.project_v = nn.Linear(dim_model, dim_head * num_heads, weight_attr=weight_attr, bias_attr=bias_attr)
-            # self.project_out = nn.Linear(dim_head * num_heads, dim_model, weight_attr=weight_attr, bias_attr=bias_attr)
-
-            self.project_q = nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
-            self.project_k = nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
-            self.project_v = nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
-            self.project_out = nn.Linear(dim_head * num_heads, dim_model, bias_attr=bias)
-
-        self.softmax = nn.Softmax(axis=-1)
+        self.softmax = paddle.nn.Softmax(axis=-1)
 
     def forward(self, 
                 hidden_q: paddle.Tensor,        # (batch_size, seq_q, dim_model)
@@ -58,34 +56,20 @@ class Attention(nn.Layer):
         # Ensure hidden_q and hidden_kv share the same memory (if needed)
         assert hidden_q.data_ptr() == hidden_kv.data_ptr()
 
-        tp_size = fleet.get_hybrid_communicate_group().get_model_parallel_world_size()
-        tp_rank = fleet.get_hybrid_communicate_group().get_model_parallel_rank()
-
-        if tp_size > 1:
-            print("hidden_q shape:", hidden_q.shape)  # 应该是 [2, 256, 2560]
-            adjust_linear = nn.Linear(2560, 1280)  # 将特征维度从 2560 调整为 1280
-            hidden_q = adjust_linear(hidden_q)
-            # 检查 project_q、project_k 和 project_v 的权重形状
-            print("project_q.weight shape:", self.project_q.weight.shape)  # 应该是 [2560, 1280]
-            print("project_k.weight shape:", self.project_k.weight.shape)  # 应该是 [2560, 1280]
-            print("project_v.weight shape:", self.project_v.weight.shape)  # 应该是 [2560, 1280]
-            # Concatenate QKV projections and split them later
-            qkv_weight = paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=0)
-
-            print("qkv_weight shape:", qkv_weight.shape)  #[7680, 1280]
-            self.project_q.bias = paddle.randn([853])
-            self.project_k.bias = paddle.randn([853])
-            self.project_v.bias = paddle.randn([853])
-            qkv_bias = paddle.concat([self.project_q.bias, self.project_k.bias, self.project_v.bias], axis=0)
-
-            print("qkv_bias shape:", qkv_bias.shape)  #[3840]
-            hidden_qkv = mp_ops._linear(hidden_q, qkv_weight, qkv_bias)    # hidden_q.shape[2] == qkv_weight.shape[1]  qkv_weight.shape[0] == qkv_bias.shape[0]  
-            hidden_qkv = hidden_qkv.reshape([batch_size, -1, hidden_qkv.shape[-1]])
-            h_q, h_k, h_v = paddle.split(hidden_qkv, num_or_sections=3, axis=-1)
+        if config['tp_size'] > 1:
+            hidden_q = bmt.nn.OpParallelLinear.apply(
+                hidden_q,
+                paddle.cat([self.project_q.weight, self.project_k.weight, self.project_v.weight], dim=0),
+                paddle.cat([self.project_q.bias, self.project_k.bias, self.project_v.bias], dim=0),
+                True, False,
+                False, None
+            )
+            hidden_q = hidden_q.view(batch_size, -1, hidden_q.shape[-1])
+            h_q, h_k, h_v = hidden_q.chunk(3, dim=-1)
         else:
-            h_q = self.project_q(hidden_q)
-            h_k = self.project_k(hidden_kv)
-            h_v = self.project_v(hidden_kv)
+            h_q : paddle.Tensor = self.project_q(hidden_q)
+            h_k : paddle.Tensor = self.project_k(hidden_kv)
+            h_v : paddle.Tensor = self.project_v(hidden_kv)
 
         seq_q = h_q.shape[1]
         seq_kv = h_k.shape[1]
@@ -133,8 +117,8 @@ class Attention(nn.Layer):
         h_out = h_out.transpose([0, 2, 1, 3])  # (batch_size, seq_q, num_heads, dim_head)
         h_out = h_out.reshape([batch_size, seq_q, -1])
 
-        if tp_size > 1:
-            h_out = h_out.reshape([batch_size * tp_size, -1, h_out.shape[-1]])
+        if config['tp_size'] > 1:
+            h_out = h_out.reshape([batch_size * config['tp_size'], -1, h_out.shape[-1]])
 
         attn_out = self.project_out(h_out)
 

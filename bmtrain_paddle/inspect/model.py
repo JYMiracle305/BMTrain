@@ -224,7 +224,7 @@ def inspect_model(model : paddle.nn.Layer, param_name : str, prefix : str = ''):
                     continue
                 stats = {
                     'name': prefix + name,
-                    'shape': tuple(p.size()),
+                    'shape': tuple(p.shape),
                     "std": p.std().cpu().item(),
                     "mean": p.mean().cpu().item(),
                     "max": p.max().cpu().item(),

@@ -2,11 +2,11 @@ from typing import Optional
 import paddle
 import paddle.nn as nn
 from paddle.nn import LayerNorm, Linear, Dropout
+import bmtrain_paddle as bmt
 
-# 假设以下层已经用 PaddlePaddle 实现
 from layers_paddle import Layernorm, Feedforward, Attention
 
-class TransformerEncoder(nn.Layer):
+class TransformerEncoder(bmt.DistributedModule):
     def __init__(self,
                  dim_model: int,
                  dim_head: int,

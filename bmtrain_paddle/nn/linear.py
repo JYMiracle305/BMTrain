@@ -5,14 +5,13 @@ import bmtrain_paddle as bmt
 
 class OpLinear(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(x, weight, bias=None):
-        ctx = {}
-        ctx['saved_tensors'] = (x, weight, bias)
-        return F.linear(x, weight, bias), ctx
+    def forward(ctx, x, weight, bias=None):
+        ctx.save_for_backward(x, weight, bias)
+        return F.linear(x, weight, bias)
 
     @staticmethod
     def backward(ctx, grad_output):
-        x, weight, bias = ctx['saved_tensors']
+        x, weight, bias = ctx.saved_tensors
         grad_x = grad_weight = grad_bias = None
         if x.requires_grad:
             grad_x = grad_output.matmul(weight)
@@ -36,14 +35,16 @@ class Linear(bmt.DistributedModule):
 
         self.in_features = in_features
         self.out_features = out_features
+        test_tensor = paddle.empty([in_features, out_features], dtype=dtype).cuda()
+        print("test_tensor.shape-------------------------", test_tensor.shape)
         self.weight = bmt.DistributedParameter(
-            paddle.empty(out_features, in_features, dtype=dtype, device="cuda"),
-            init_method=paddle.nn.init.xavier_normal_,
+            paddle.empty([in_features, out_features], dtype=dtype).cuda(),
+            init_method=paddle.nn.initializer.XavierNormal(),
         )
         if bias:
             self.bias = bmt.DistributedParameter(
-                paddle.empty(out_features, dtype=dtype, device="cuda"),
-                init_method=paddle.nn.init.zeros_,
+                paddle.empty([out_features], dtype=dtype).cuda(),
+                init_method=paddle.nn.initializer.Constant(0.0),
             )
         else:
             self.register_parameter("bias", None)

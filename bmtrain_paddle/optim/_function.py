@@ -5,7 +5,7 @@ CHECK_INPUT = lambda x: x.is_contiguous() and isinstance(x.place, paddle.CUDAPla
 
 
 def bf16_from_fp32(param_fp32):
-    param_bf16 = paddle.empty_like(param_fp32, dtype='bfloat16')
+    param_bf16 = paddle.empty_like(param_fp32, dtype=paddle.bfloat16)
     C.to_bf16_from_fp32(
         param_fp32.numel(), param_fp32.data_ptr(), param_bf16.data_ptr()
     )
@@ -13,7 +13,7 @@ def bf16_from_fp32(param_fp32):
 
 
 def fp16_from_fp32(param_fp32):
-    param_fp16 = paddle.empty_like(param_fp32, dtype='float16')
+    param_fp16 = paddle.empty_like(param_fp32, dtype=paddle.float16)
     C.to_fp16_from_fp32(
         param_fp32.numel(), param_fp32.data_ptr(), param_fp16.data_ptr()
     )

@@ -45,7 +45,7 @@ def storage_type_cuda(storage_type):
 def _get_param_kw(param: DistributedParameter):
     """Get DistributedParameter kw name."""
     type_name = str(param.dtype).split(".")[-1]
-    grad_name = "_grad" if param.requires_grad else "_nograd"
+    grad_name = "_grad" if not param.stop_gradient else "_nograd"
     group_name = ""
     if param.group is not None:
         group_name = "_g_" + param.group
@@ -143,7 +143,7 @@ class Block(paddle.nn.Layer):
                 self._storage_info[kw_name] = {
                     "total": 0,
                     "storage_type": storage_type,
-                    "requires_grad": param.requires_grad,
+                    "requires_grad": not param.stop_gradient,
                     "group": param.group,
                     "zero_comm": zero_comm,
                 }
@@ -288,7 +288,7 @@ class Block(paddle.nn.Layer):
         grad_index = []
         arg_list = list(args)
         for i, arg in enumerate(args):
-            if arg is not None and isinstance(arg, paddle.Tensor) and arg.requires_grad:
+            if arg is not None and isinstance(arg, paddle.Tensor) and not arg.stop_gradient:
                 grad_tensors.append(arg)
                 grad_index.append(i)
         grad_tensors = tuple(grad_tensors)
@@ -300,7 +300,7 @@ class Block(paddle.nn.Layer):
         if self._mode != "PIPE" and len(grad_tensors) == 0:
             self.all_param_no_grad = True
             for param in self._param_info:
-                if param["parameter"].requires_grad:
+                if not param["parameter"].stop_gradient:
                     self.all_param_no_grad = False
                     break
             self.all_input_no_grad = True
@@ -321,7 +321,7 @@ class Block(paddle.nn.Layer):
         arg_list = self.pre_hook(*args)
 
         if self.all_input_no_grad and not self.all_param_no_grad:
-            placeholder = paddle.Tensor([], requires_grad=paddle.is_grad_enabled())
+            placeholder = paddle.Tensor([], stop_gradient=(not paddle.is_grad_enabled()))
             return hook_func.OneStepNoGradFunc.apply(self, placeholder, *arg_list)
 
         # if self._use_checkpoint:
@@ -687,7 +687,7 @@ class TransformerBlockList(paddle.nn.Layer):
             module._is_first_layer = False
             module._is_last_layer = False
             self._modules[str(i)] = module
-            self.add_module(str(i), module)
+            self.add_sublayer(str(i), module)
 
         self._modules[str(0)]._is_first_layer = True
         self._modules[str(len(modules) - 1)]._is_last_layer = True

@@ -21,7 +21,7 @@ def init_distributed_parameter(params: Iterable[paddle.Tensor]):
             partition_size = param.numel()
             global_size = partition_size * config["tp_zero_size"] * config["tp_size"]
             tmp_storage = param.storage_type()(global_size)
-            tmp_tensor = paddle.tensor([], dtype=param.dtype, device="cuda")
+            tmp_tensor = paddle.tensor([], dtype=param.dtype).cuda()
             tmp_tensor.set_(tmp_storage, 0, param._tp_original_shape)
 
             param._init_method(tmp_tensor)

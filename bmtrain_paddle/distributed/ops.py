@@ -110,7 +110,7 @@ def all_gather(x : paddle.Tensor, comm = None):
 class OpReduceScatter(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
+    def forward(ctx, input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
         if comm is None:
             comm = config["comm"]
         rank = commRank(comm)
@@ -143,7 +143,7 @@ class OpReduceScatter(paddle.autograd.PyLayer):
         elif op == "prod":
             ctx['prod_mask'] = (output / input[rank * output.shape[0]:(rank + 1) * output.shape[0]])
             # ctx.save_for_backward( output / input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
-        return output, ctx
+        return output
 
     @staticmethod
     def backward(ctx, grad_output):
@@ -182,53 +182,48 @@ def reduce_scatter(x : paddle.Tensor, op : str = "sum", comm = None):
 
 class OpAllReduce(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
+    def forward(ctx, input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
         if comm is None:
             comm = config["comm"]
+        ctx.comm = comm
         if not input.is_contiguous():
             input = input.contiguous()
         if input._offset() != 0 or input.numel() != input.size:
             input = input.clone()
         output = paddle.empty( input.numel(), dtype=input.dtype)
         if input.place.is_gpu_place():
-            output = output._to(place=input.place)
-        
-        ncclAllReduce(
-            input,
-            output,
-            op,
-            comm
-        )
-        ctx = {
-            'op': op,
-            'comm': comm,
-            'input_shape': input.shape
-        }
+            output = output.cuda()
+
+        print("!!!!!!!!!!!!!!!!!nccl all reduce--------------")
+
+        # ncclAllReduce(
+        #     input,
+        #     output,
+        #     op,
+        #     comm
+        # )
+        ctx.op = op
         
         if op in ["sum", "avg"]:
             pass
         elif op in ["max", "min"]:
-            ctx['mask'] = (input == output)
+            ctx.save_for_backward( input != output )
         else:
-            ctx['prod_mask'] = output / input
-        return output, ctx
+            ctx.save_for_backward( output / input )
+        return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        op = ctx['op']
-        comm = ctx['comm']
-
-        if op == "sum":
-            pass
-        elif op == "avg":
-            grad_output = grad_output / commCount(comm)
-        elif op in ["max", "min"]:
+        if ctx.op == "sum":
+            return grad_output, None, None
+        elif ctx.op == "avg":
+            return grad_output / commCount(ctx.comm), None, None
+        elif ctx.op in ["max", "min"]:
             mask = ctx['mask']
             grad_output = grad_output * mask.astype(grad_output.dtype)
+            return grad_output, None, None
         else:
-            grad_output = grad_output * ctx.saved_tensors[0]
-
-        return grad_output, None, None
+            return grad_output * ctx.saved_tensors[0], None, None
 
 def all_reduce(x : paddle.Tensor, op : str = "sum", comm = None):
     """Reduces the input tensor from all processes.
@@ -243,8 +238,7 @@ def all_reduce(x : paddle.Tensor, op : str = "sum", comm = None):
     """
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
-
-    assert isinstance(x.place, paddle.CUDAPlace)
+    str(x.place) == "Place(gpu:0)"
     return OpAllReduce.apply(x, op, comm)
 
 

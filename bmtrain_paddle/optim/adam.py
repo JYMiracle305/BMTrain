@@ -49,7 +49,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                 if p in self.state:
                     state = self.state[p]
                     if len(state) > 0:
-                        if p.dtype == 'float16':
+                        if p.dtype == paddle.float16:
                             state["exp_avg"] *= delta
                             state["exp_avg_sq"] *= delta
 
@@ -75,7 +75,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
                         )
-                    if p.dtype not in ['float32', 'float16', 'bfloat16']:
+                    if p.dtype not in [paddle.float32, paddle.float16, paddle.bfloat16]:
                         raise RuntimeError(
                             "Adam only supports fp32, fp16 and bf16 gradients"
                         )
@@ -85,22 +85,22 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                     if len(state) == 0:
                         state["step"] = 0
                         # Exponential moving average of gradient values
-                        if p.dtype == 'float16':
+                        if p.dtype == paddle.float16:
                             state["exp_avg"] = paddle.zeros(
-                                p.size(), dtype='float16', device=p.device
+                                p.size(), dtype=paddle.float16, device=p.device
                             )  # on device
                         else:
                             state["exp_avg"] = paddle.zeros(
-                                p.size(), dtype='float32', device=p.device
+                                p.size(), dtype=paddle.float32, device=p.device
                             )  # on device
                         # Exponential moving average of squared gradient values
                         state["exp_avg_sq"] = paddle.zeros(
-                            p.size(), dtype='float32', device=p.device
+                            p.size(), dtype=paddle.float32, device=p.device
                         )  # on device
 
-                        if p.dtype != 'float32':
+                        if p.dtype != paddle.float32:
                             state["_param_fp32"] = paddle.empty(
-                                p.size(), dtype='float32', device=p.device
+                                p.size(), dtype=paddle.float32, device=p.device
                             )  # on device
                             state["_param_fp32"].copy_(p)
 
@@ -110,7 +110,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                     else:
                         grad = p.grad
 
-                    if p.dtype == 'float32':
+                    if p.dtype == paddle.float32:
                         other_kwargs = {}
                         if (
                             "maximize"
@@ -140,7 +140,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                         )
                         state["step"] += 1
                     else:
-                        f = F.adam_fp16 if p.dtype == 'float16' else F.adam_bf16
+                        f = F.adam_fp16 if p.dtype == paddle.float16 else F.adam_bf16
                         state["step"] += 1
                         f(
                             state["_param_fp32"],  # fp32
@@ -213,9 +213,9 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
             if k in id_map:
                 param = id_map[k]
 
-                if param.dtype != 'float32' and "_param_fp32" not in v:
+                if param.dtype != paddle.float32 and "_param_fp32" not in v:
                     v["_param_fp32"] = paddle.empty(
-                        param.size(), dtype='float32', device=param.device
+                        param.size(), dtype=paddle.float32, device=param.device
                     )
                     v["_param_fp32"].copy_(param)
 
@@ -223,13 +223,13 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                     (
                         "exp_avg",
                         (
-                            'float16'
-                            if param.dtype == 'float16'
-                            else 'float32'
+                            paddle.float16
+                            if param.dtype == paddle.float16
+                            else paddle.float32
                         ),
                     ),
-                    ("exp_avg_sq", 'float32'),
-                    ("_param_fp32", 'float32'),
+                    ("exp_avg_sq", paddle.float32),
+                    ("_param_fp32", paddle.float32),
                 ]:
                     if name in v:
                         v[name] = v[name].to(param.device).to(dtype)

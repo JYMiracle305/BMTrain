@@ -142,11 +142,11 @@ def allgather_objects(obj):
         data_bytes: bytes = pickle.dumps(obj)
         data_length: int = len(data_bytes)
 
-        gpu_data_length = paddle.tensor([data_length], device="cuda", dtype='long')
+        gpu_data_length = paddle.tensor([data_length], dtype='long').cuda()
         gathered_length = bmt.distributed.all_gather(gpu_data_length).view(-1).cpu()
         max_data_length = gathered_length.max().item()
 
-        gpu_data_bytes = paddle.zeros(max_data_length, dtype='uint8', device="cuda")
+        gpu_data_bytes = paddle.zeros(max_data_length, dtype='uint8').cuda()
         byte_storage = paddle.ByteStorage.from_buffer(data_bytes)
         gpu_data_bytes[:data_length] = paddle.ByteTensor(byte_storage)
 
@@ -190,7 +190,7 @@ def broadcast_object(obj, comm, src = 0):
             comm
         )
         byte_tensor_size = local_size[0].item()
-        byte_tensor = paddle.empty(int(byte_tensor_size), dtype='uint8', device="cuda")
+        byte_tensor = paddle.empty(int(byte_tensor_size), dtype='uint8').cuda()
         nccl.broadcast(
             byte_tensor.storage(),
             byte_tensor.storage(),
@@ -210,7 +210,7 @@ class DistributedTensorWrapper:
         self.tensor = tensor
         
     def broadcast(self):
-        output_param = paddle.empty(self.shape, dtype=self._dtype, device="cuda")
+        output_param = paddle.empty(self.shape, dtype=self._dtype).cuda()
         if config['rank'] == 0:
             input_param = self.tensor
             if isinstance(input_param.place, paddle.CUDAPlace):
@@ -253,10 +253,10 @@ class DistributedStateDictWrapper(Mapping):
         self._metadata = broadcast_object(getattr(state_dict, "_metadata", None), config["comm"])
     
     def __getitem__(self, key : str):
-        tmp_shape = paddle.zeros(32, device="cuda", dtype='int32')
+        tmp_shape = paddle.zeros(32, dtype='int32').cuda()
         if config['rank'] == 0:
             input_param : paddle.Tensor = self._state_dict[key]
-            shape_list = paddle.tensor(list(input_param.size()), device="cuda", dtype='int32')
+            shape_list = paddle.tensor(list(input_param.size()), dtype='int32').cuda()
             dtype_idx = DTYPE_LIST.index(input_param.dtype)
             
             assert dtype_idx != -1, "Unknown data type %s" % input_param.dtype

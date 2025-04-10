@@ -30,7 +30,7 @@ def main():
         dim_ff=8192,
         max_distance=1024,
         bias=True,
-        dtype='float32'    #float16
+        dtype=paddle.float16    #float16
     )
 
     bmt.init_parameters(model)
@@ -99,8 +99,7 @@ def main():
             else:
                 loss = loss_func(logits.astype('float32').reshape([batch * seq_len, vocab_out_size]), targets.reshape([batch * seq_len]))
         
-            # global_loss = bmt.sum_loss(loss).item()
-            global_loss = loss
+            global_loss = bmt.sum_loss(loss).item()
             optim_manager.zero_grad()
 
             optim_manager.backward(loss)
@@ -113,13 +112,13 @@ def main():
                     inspector.get_summary()
                 )
             )
-            # bmt.print_rank(
-            #     inspect.format_summary(
-            #         inspect.inspect_model(model, "*")
-            #     )
-            # )
+            bmt.print_rank(
+                inspect.format_summary(
+                    inspect.inspect_model(model, "*")
+                )
+            )
 
-        # optim_manager.step()
+        optim_manager.step()
 
         # record time and loss
         iteration_time = time.time() - st

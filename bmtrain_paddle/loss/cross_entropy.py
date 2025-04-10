@@ -9,7 +9,7 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
     CrossEntropy dim = 1
     """
     @staticmethod
-    def forward(x : paddle.Tensor, target : paddle.Tensor, ignore_index: int):
+    def forward(ctx, x : paddle.Tensor, target : paddle.Tensor, ignore_index: int):
         assert x.ndim == 2
         softmax = paddle.empty(x.size(), device=x.device, dtype=x.dtype)
         out = paddle.empty(x.size(0), device=x.device, dtype='float')
@@ -20,11 +20,10 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
             softmax, out,
             ignore_index,
         )
-        ctx = {}
         ctx['ignore_index'] = ignore_index
         # ctx.ignore_index = ignore_index
         ctx['saved_tensors'] = (softmax, target)
-        return out, ctx # float tensor
+        return out
         
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
@@ -40,7 +39,7 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
 
 class VPFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
-    def forward(logits : paddle.Tensor, target : paddle.Tensor):
+    def forward(ctx, logits : paddle.Tensor, target : paddle.Tensor):
         comm = config['tp_comm']
         rank = config['tp_rank']
         world_size = config['tp_size']
@@ -83,11 +82,10 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
 
         loss = paddle.log(sum_exp_logits.view(predicted_logits.shape)) - predicted_logits
 
-        ctx = {}
         # Normalize
         ctx['saved_tensors'] = (softmax, target_mask, masked_target_1d)
 
-        return loss, ctx
+        return loss
 
     @staticmethod
     def backward(ctx, grad_output):

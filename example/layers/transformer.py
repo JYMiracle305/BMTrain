@@ -11,6 +11,7 @@ class TransformerEncoder(bmt.DistributedModule):
         super().__init__()
 
         self.ln_attn = Layernorm(dim_model, dtype=dtype)
+        print("before Attention--------------", dim_model, dim_head, num_heads, bias, dtype)
         self.attn = Attention(dim_model, dim_head, num_heads, bias=bias, dtype=dtype)
 
         self.ln_ff = Layernorm(dim_model, dtype=dtype)

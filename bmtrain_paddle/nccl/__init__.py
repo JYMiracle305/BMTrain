@@ -127,6 +127,7 @@ def allReduce(
     operator = op2nccl(op)
 
     assert src.size() == dst.size(), "Buffer size not aligned"
+    print("------------nccl all reduce--------------")
     C.ncclAllReduce(
         sendbuff.value,
         recvbuff.value,

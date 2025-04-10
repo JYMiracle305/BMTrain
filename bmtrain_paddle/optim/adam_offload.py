@@ -68,7 +68,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                         "_delta_info",
                         (
                             paddle.tensor(
-                                [0 for i in range(4)], dtype='float32', device="cpu"
+                                [0 for i in range(4)], dtype=paddle.float32
                             )
                         ),
                     )
@@ -107,23 +107,23 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                     if len(state) == 0:
                         state["step"] = 0
                         # Exponential moving average of gradient values
-                        state["exp_avg"] = paddle.zeros(p.size(), dtype='float32')  # on host
+                        state["exp_avg"] = paddle.zeros(p.size(), dtype=paddle.float32)  # on host
                         # Exponential moving average of squared gradient values
-                        state["exp_avg_sq"] = paddle.zeros(p.size(), dtype='float32')  # on host
+                        state["exp_avg_sq"] = paddle.zeros(p.size(), dtype=paddle.float32)  # on host
 
-                        if p.dtype == 'float32':
+                        if p.dtype == paddle.float32:
                             state["_param_fp32"] = paddle.empty(
-                                p.size(), dtype='float32', pin_memory=True
+                                p.size(), dtype=paddle.float32, pin_memory=True
                             )  # on host
                             state["_param_fp32"].copy_(p)
 
                             # placeholder
                             state["_grad_fp32"] = paddle.empty(
-                                p.size(), dtype='float32', pin_memory=True
+                                p.size(), dtype=paddle.float32, pin_memory=True
                             )  # on host
                         else:
                             state["_param_fp32"] = paddle.empty(
-                                p.size(), dtype='float32', device="cpu"
+                                p.size(), dtype=paddle.float32
                             )  # on host
                             state["_param_fp32"].copy_(p)
 
@@ -153,7 +153,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
 
         # transfer parameters to host asynchronously
         for param, state, event, _, _, _, _, _ in update_params:
-            if param.dtype == 'float32':
+            if param.dtype == paddle.float32:
                 state["_grad_fp32"].copy_(param.grad, non_blocking=True)
             else:
                 state["_grad_fp16"].copy_(param.grad, non_blocking=True)
@@ -166,7 +166,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
             event.synchronize()
 
             # update parameters
-            if param.dtype == 'float32':
+            if param.dtype == paddle.float32:
                 state["_grad_fp32"].mul_(1.0 / scale)
                 if ("maximize" in group) and (group["maximize"] is True):
                     grad = -state["_grad_fp32"]
@@ -296,26 +296,26 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                 if "_param_fp32" not in v:
                     with paddle.no_grad():
                         v["_param_fp32"] = paddle.empty(
-                            param.size(), dtype='float32', device="cpu"
+                            param.size(), dtype=paddle.float32
                         )
                         v["_param_fp32"].copy_(param)
 
                 for name, dtype in [
-                    ("exp_avg", 'float32'),
-                    ("exp_avg_sq", 'float32'),
-                    ("_param_fp32", 'float32'),
+                    ("exp_avg", paddle.float32),
+                    ("exp_avg_sq", paddle.float32),
+                    ("_param_fp32", paddle.float32),
                 ]:
                     if name in v:
                         v[name] = v[name].to("cpu").to(dtype)
 
                 state[param] = v
-                if param.dtype == 'float32':
+                if param.dtype == paddle.float32:
                     state[param]["_param_fp32"] = state[param][
                         "_param_fp32"
                     ].pin_memory()  # on host
                     # initialize placeholders
                     state[param]["_grad_fp32"] = paddle.empty(
-                        param.size(), dtype='float32', pin_memory=True
+                        param.size(), dtype=paddle.float32, pin_memory=True
                     )  # on host
                 else:
                     # initialize placeholders
