@@ -46,9 +46,33 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
             'weight_decay': weight_decay
         }
         
+        print("\n1111111111111111111111111111=== 原始参数信息 ===")
+        if len(params) == 0:
+            raise ValueError("参数列表为空！请检查模型是否注册了参数")
+        for idx, param in enumerate(params):
+            print(f"参数 {idx}:")
+            print(f"  名称: {param.name}")
+            print(f"  形状: {param.shape}")
+            print(f"  数据类型: {param.dtype}")
+            print(f"  设备位置: {param.place}")
+            print(f"  是否可训练: {not param.stop_gradient}")
+        
+        params = list(params)
+
+        print("\n2222222222222222222222222222=== 原始参数信息 ===")
+        if len(params) == 0:
+            raise ValueError("参数列表为空！请检查模型是否注册了参数")
+        for idx, param in enumerate(params):
+            print(f"参数 {idx}:")
+            print(f"  名称: {param.name}")
+            print(f"  形状: {param.shape}")
+            print(f"  数据类型: {param.dtype}")
+            print(f"  设备位置: {param.place}")
+            print(f"  是否可训练: {not param.stop_gradient}")
+
         parameters = [
             {
-                'params': list(params),
+                'params': params,
             }
         ]
 

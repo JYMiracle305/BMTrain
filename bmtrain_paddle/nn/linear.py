@@ -47,8 +47,7 @@ class Linear(bmt.DistributedModule):
                 init_method=paddle.nn.initializer.Constant(0.0),
             )
         else:
-            self.register_parameter("bias", None)
-
+            self.bias = None
     def forward(self, input):
         return OpLinear.apply(input, self.weight, self.bias)
 

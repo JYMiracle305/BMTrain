@@ -1,9 +1,10 @@
 import math
 from typing import Optional
 import paddle
+import paddle.nn as nn
 import paddle.nn.functional as F
-import bmtrain_paddle as bmt
-class Embedding(bmt.DistributedModule):
+
+class Embedding(nn.Layer):
     def __init__(self, 
                  num_embeddings: int, 
                  embedding_dim: int, 
@@ -18,22 +19,28 @@ class Embedding(bmt.DistributedModule):
 
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
-        if padding_idx is not None:
-            if padding_idx > 0:
-                assert padding_idx < self.num_embeddings, 'Padding_idx must be within num_embeddings'
-            elif padding_idx < 0:
-                assert padding_idx >= -self.num_embeddings, 'Padding_idx must be within num_embeddings'
-                padding_idx = self.num_embeddings + padding_idx
         self.padding_idx = padding_idx
         self.max_norm = max_norm
         self.norm_type = norm_type
         self.scale_grad_by_freq = scale_grad_by_freq
-        if _weight is None:
-            self.weight = bmt.DistributedParameter(paddle.empty([num_embeddings, embedding_dim], dtype=dtype).cuda())
-        else:
-            self.weight = bmt.DistributedParameter(_weight)
-        print("-------------Embedding-----------", self.weight.shape)
         self.sparse = sparse
+
+        if _weight is None:
+            self.weight = self.create_parameter(
+                shape=[num_embeddings, embedding_dim],
+                dtype=dtype if dtype else paddle.get_default_dtype(),
+                default_initializer=nn.initializer.Normal()
+            )
+        else:
+            self.weight = self.create_parameter(
+                shape=_weight.shape,
+                dtype=_weight.dtype,
+                default_initializer=nn.initializer.Assign(_weight)
+            )
+        
+        if padding_idx is not None:
+            self.weight.stop_gradient = True
+            self.weight[padding_idx] = paddle.zeros([embedding_dim], dtype=self.weight.dtype)
 
     @classmethod
     def from_pretrained(cls, embeddings, freeze=True, padding_idx=None,

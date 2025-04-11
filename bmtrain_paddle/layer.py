@@ -9,6 +9,21 @@ class DistributedModule(paddle.nn.Layer):
     DistributedModule is a subclass of paddle.nn.Layer that overrides the `__getattr__` method to gather distributed parameters automatically.
     
     """
+    def __setattr__(self, name, value):
+        # 自动识别并注册 Parameter 类型属性
+        print("~~~~~~~~~~~~~DistributedModule __setattr__~~~~~~~~~~~~", name, value)
+        if isinstance(value, DistributedParameter):
+            if not name in self._parameters:
+                self.add_parameter(name, value)
+        elif isinstance(value, paddle.nn.Layer):
+            self.add_sublayer(name, value)
+        super().__setattr__(name, value)
+
+    def register_parameter(self, name, param):
+        # 显式注册参数到 _parameters 字典
+        if not isinstance(param, DistributedParameter):
+            raise TypeError("DistributedParameter")
+        self._parameters[name] = param
 
     def __getattr__(self, name: str):
         ret = super().__getattr__(name)

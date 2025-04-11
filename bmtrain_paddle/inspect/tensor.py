@@ -343,7 +343,7 @@ def inspect_tensor() -> InspectTensorManager:
     return InspectTensorManager()
 
 
-def record_tensor(x: paddle.Tensor, model: paddle.nn.Layer, name: str, group=None):
+def record_tensor(x: paddle.Tensor, name: str, group=None):
     """Record the tensor for inspection.
 
     Args:
@@ -355,7 +355,7 @@ def record_tensor(x: paddle.Tensor, model: paddle.nn.Layer, name: str, group=Non
     **Note:** Recording too many tensors may cause memory issues.
 
     """
-    if x in model.parameters():
+    if isinstance(x, paddle.nn.Parameter):
         raise RuntimeError("Cannot inspect Parameter")
 
     if not debug.get("_inspect_tensor", False):

@@ -53,56 +53,54 @@ class DistributedParameter(paddle.Tensor):
             comm = config["zero_comm"]
         world_size = nccl.commCount(comm)
         rank = nccl.commRank(comm)
+        cuda_storage_size = round_up(num_of_elements, world_size) // world_size
 
-        original_shape = data.size()
+        original_shape = data.shape
         tp_original_shape = original_shape
         if tp_mode and tp_split_dim >= 0:
             tp_original_shape = list(original_shape)
             tp_original_shape[tp_split_dim] *= config["tp_size"]
 
-        # 计算分片大小（对齐到 512 字节）
-        element_size = data.element_size()
-        align_size = 512 // element_size
-        chunk_size = (num_of_elements + world_size - 1) // world_size
-        chunk_size = (chunk_size + align_size - 1) // align_size * align_size
-
-        # === 关键步骤2：显存预分配 ===
-        # 直接在 GPU 上创建分片存储
-        place = paddle.CUDAPlace(paddle.distributed.ParallelEnv().dev_id)
-        storage = paddle.empty([chunk_size], dtype=data.dtype).cuda(rank)
+        start_of_partition = cuda_storage_size * rank
+        end_of_partition = min(num_of_elements, cuda_storage_size * (rank + 1))
         
-        # === 关键步骤3：数据分片拷贝 ===
-        start = chunk_size * rank
-        end = min(start + chunk_size, num_elements)
-        storage_slice = storage[0:end-start]
-        
-        if data.place.is_gpu_place():
-            # 同设备直接拷贝
-            storage_slice.copy_(data.flatten()[start:end], False)
-        else:
-            # 跨设备异步拷贝
-            with paddle.device.CUDAPlace(place.get_device()):
-                tmp = paddle.to_tensor(data.flatten()[start:end], place=place)
-                storage_slice.copy_(tmp, False)
+        # FX: cuda_tensor_size < 0 if num_of_elements is too small
+        cuda_tensor_size = max(end_of_partition - start_of_partition, 0)
 
-        # === 关键步骤4：构造子类实例 ===
-        instance = super().__new__(cls, storage_slice)
-        instance.stop_gradient = not requires_grad
+        data_flat = paddle.flatten(data)
 
-        # === 步骤6：元数据记录 ===
-        instance._original_shape = data.shape
-        instance._tp_mode = tp_mode
-        instance._split_dim = tp_split_dim
-        # instance._group = mp_group if tp_mode else dp_group
+        local_shard = paddle.empty(tp_original_shape, dtype=data.dtype).cuda()
+        if end_of_partition > start_of_partition:
+            paddle.assign(
+                data_flat[start_of_partition:end_of_partition], 
+                local_shard[:end_of_partition-start_of_partition]
+            )
 
-        # === 步骤7：参数初始化 ===
-        if init_method is not None:
-            init_method(instance)
-        else:
-            # 默认 Xavier 初始化
-            paddle.nn.initializer.XavierNormal()(instance)
+        # ------------------- 参数构造 -------------------
+        name = paddle.utils.unique_name.generate('dist_param')
+        param = paddle.create_parameter(
+            shape=local_shard.shape,
+            dtype=local_shard.dtype,
+            default_initializer=paddle.nn.initializer.Assign(local_shard),
+            is_bias=False,
+            attr=paddle.ParamAttr(name=name)
+        )
+        param.stop_gradient = not requires_grad
+        param._original_shape = original_shape
+        param._start_partition = start_of_partition
+        param._end_partition = end_of_partition
+        param._init_method = init_method
+        param._in_block = False
+        param._tp_original_shape = tp_original_shape
+        param._tp_split_dim = tp_split_dim
+        param._zero_comm = comm
+        param._tp_mode = tp_mode
 
-        return instance
+        # ------------------- 初始化方法 -------------------
+        if init_method:
+            init_method(param)
+
+        return param
 
     @property
     def group(self):

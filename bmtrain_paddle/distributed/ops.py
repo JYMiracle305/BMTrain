@@ -113,6 +113,7 @@ class OpReduceScatter(paddle.autograd.PyLayer):
     def forward(ctx, input : paddle.Tensor, op : str, comm : NCCLCommunicator = None):
         if comm is None:
             comm = config["comm"]
+        ctx.comm = comm
         rank = commRank(comm)
         assert input.shape[0] % commCount(comm) == 0, "The dimension 0 must be divisible by the number of communication processes"
         if not input.is_contiguous():
@@ -129,36 +130,28 @@ class OpReduceScatter(paddle.autograd.PyLayer):
             op,
             comm
         )
-        ctx = {
-            'op': op,
-            'comm': comm,
-            'input_shape': input.shape,
-            'world_size': commCount(comm)
-        }
+        ctx.op = op
         if op in ["sum", "avg"]:
             pass
         elif op in ["max", "min"]:
-            ctx['mask'] = (output == input[rank * output.shape[0]:(rank + 1) *output.shape[0]])
+            ctx.save_for_backward(output == input[rank * output.shape[0]:(rank + 1) *output.shape[0]])
             # ctx.save_for_backward( output != input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
-        elif op == "prod":
-            ctx['prod_mask'] = (output / input[rank * output.shape[0]:(rank + 1) * output.shape[0]])
+        else:
+            ctx.save_for_backward(output / input[rank * output.shape[0]:(rank + 1) * output.shape[0]])
             # ctx.save_for_backward( output / input[rank * input.shape[0]:(rank + 1) * input.shape[0]] )
         return output
 
     @staticmethod
     def backward(ctx, grad_output):
-        op = ctx['op']
-        comm = ctx['comm']
-        world_size = ctx['world_size']
         with paddle.no_grad():
-            grad_output = OpAllGather.apply(grad_output, comm).flatten(0,1)
-        if op in ["max", "min", "prod"]:
+            grad_output = OpAllGather.apply(grad_output, ctx.comm).flatten(0,1)
+        if ctx.op in ["max", "min", "prod"]:
             raise NotImplementedError("max min operation now do not support backward")
         else:
             if ctx.op == "avg":
                 grad_output /= commCount(ctx.comm)
         # 形状重构（适配可能存在的非连续内存）
-        grad_input = grad_input.reshape(ctx['input_shape']).contiguous()    
+        grad_input = grad_input.reshape(ctx.input_shape).contiguous()    
 
         return grad_output, None, None
        
@@ -219,7 +212,7 @@ class OpAllReduce(paddle.autograd.PyLayer):
         elif ctx.op == "avg":
             return grad_output / commCount(ctx.comm), None, None
         elif ctx.op in ["max", "min"]:
-            mask = ctx['mask']
+            mask = ctx.mask
             grad_output = grad_output * mask.astype(grad_output.dtype)
             return grad_output, None, None
         else:

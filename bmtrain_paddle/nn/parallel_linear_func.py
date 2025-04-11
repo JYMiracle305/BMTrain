@@ -221,13 +221,12 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         if reduce_output_type is not None:
             reduce_output_type = ReduceType(reduce_output_type)
 
-        ctx = {}
-        ctx['save_for_backward'] = (input, weight, bias)
-        ctx['gather_output'] = gather_output
-        ctx['split_input'] = split_input
-        ctx['gather_input'] = gather_input
-        ctx['reduce_output_type'] = reduce_output_type
-        ctx['async_gather_chunks'] = async_gather_chunks
+        ctx.save_for_backward(input, weight, bias)
+        ctx.gather_output = gather_output
+        ctx.split_input = split_input
+        ctx.gather_input = gather_input
+        ctx.reduce_output_type = reduce_output_type
+        ctx.async_gather_chunks = async_gather_chunks
 
         if (
             gather_input
@@ -241,7 +240,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
                 input, weight, bias, async_gather_chunks
             )
         else:
-            all_input = preprocess_input(input, ctx['gather_input'], ctx['split_input'])
+            all_input = preprocess_input(input, ctx.gather_input, ctx.split_input)
             out = F.linear(all_input, weight, bias)
 
         if gather_output:
@@ -262,14 +261,14 @@ class OpParallelLinear(paddle.autograd.PyLayer):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, weight, bias = ctx['saved_tensors']
-        gather_output = ctx['gather_output']
+        input, weight, bias = ctx.saved_tensors
+        gather_output = ctx.gather_output
 
         if ctx.reduce_output_type == ReduceType.REDUCE_SCATTER:
             if input.requires_grad or weight.requires_grad:
                 grad_input, grad_weight, grad_bias = (
                     async_all_gather_linear_backward_func(
-                        grad_output, input, weight, bias, ctx['async_gather_chunks']
+                        grad_output, input, weight, bias, ctx.async_gather_chunks
                     )
                 )
                 return grad_input, grad_weight, grad_bias, None, None, None, None, None
@@ -287,23 +286,23 @@ class OpParallelLinear(paddle.autograd.PyLayer):
 
         current_stream = paddle.device.cuda.current_stream()
         if input.requires_grad or weight.requires_grad:
-            if ctx['gather_input']:
+            if ctx.gather_input:
                 # async the all_gather
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     input.record_stream(config["tp_comm_stream"])
                     config["tp_comm_stream"].wait_stream(current_stream)
                     all_input = preprocess_input(
-                        input, ctx['gather_input'], ctx['split_input']
+                        input, ctx.gather_input, ctx.split_input
                     )
                     # use event to solve two streams waiting for each other
                     gather_event = config["tp_comm_stream"].record_event()
             else:
-                all_input = preprocess_input(input, ctx['gather_input'], ctx['split_input'])
+                all_input = preprocess_input(input, ctx.gather_input, ctx.split_input)
 
         if input.requires_grad:
             grad_all_input = grad_output.matmul(weight)
             grad_input = paddle.zeros_like(input)
-            if ctx['gather_input']:
+            if ctx.gather_input:
                 # async the reduce_scatter
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
@@ -315,7 +314,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
                         "sum",
                         config["tp_comm"],
                     )
-            elif ctx['reduce_output_type'] is None:
+            elif ctx.reduce_output_type is None:
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
                     grad_input.record_stream(config["tp_comm_stream"])
@@ -329,14 +328,14 @@ class OpParallelLinear(paddle.autograd.PyLayer):
             else:
                 grad_input = grad_all_input
 
-            if ctx['split_input']:
+            if ctx.split_input:
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
                     grad_input.record_stream(config["tp_comm_stream"])
                     grad_input = all_gather(grad_input, config["tp_comm"])
 
         # wait all_gather
-        if ctx['gather_input']:
+        if ctx.gather_input:
             current_stream.wait_event(gather_event)
         if weight.requires_grad:
             grad_weight = (

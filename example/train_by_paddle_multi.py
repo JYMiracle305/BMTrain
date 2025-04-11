@@ -35,6 +35,9 @@ def main():
 
     bmt.init_parameters(model)
 
+    print("参数数量:", len(list(model.parameters())))  # 应为非零
+    for name, param in model.named_parameters():
+        print(f"参数名称: {name}, 形状: {param.shape}, 设备: {param.place}")
     bmt.print_rank("Model memory")
     # bmt.print_rank(paddle.cuda.memory_summary())
     # bmt.synchronize()

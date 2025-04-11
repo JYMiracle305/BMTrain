@@ -1,5 +1,4 @@
 import paddle
-import paddle.nn as nn
 import paddle.distributed as dist
 from paddle.distributed.fleet.utils import recompute
 import bmtrain_paddle as bmt
@@ -7,7 +6,7 @@ from bmtrain_paddle.global_var import config
 # 假设以下层已经用 PaddlePaddle 实现
 from layers_paddle import TransformerEncoder, Layernorm, Embedding
 
-class GPT_paddle(nn.Layer):
+class GPT_paddle(bmt.DistributedModule):
     def __init__(self,
                  num_layers: int,
                  vocab_size: int,
@@ -24,14 +23,10 @@ class GPT_paddle(nn.Layer):
 
         # 词嵌入和位置嵌入
         if config["tp_size"] > 1:
-            self.word_emb = Embedding(vocab_size, dim_model, dtype=dtype)
-            self.pos_emb = Embedding(max_distance, dim_model, dtype=dtype)
+            self.word_emb = bmt.nn.VPEmbedding(vocab_size, dim_model, dtype=dtype)
         else:
-            print(f"vocab_size:{vocab_size}, dim_model:{dim_model}")
             self.word_emb = Embedding(vocab_size, dim_model, dtype=dtype)
-            self.pos_emb = Embedding(max_distance, dim_model, dtype=dtype)
-            print("词嵌入维度:", self.word_emb.weight.shape)  # 应为 [vocab_size//tp_size, dim_model]
-            print("位置嵌入维度:", self.pos_emb.weight.shape)  # 应为 [max_distance, dim_model]
+        self.pos_emb = Embedding(max_distance, dim_model, dtype=dtype)
         # Transformer 层
         if config['pipe_size'] > 1:
             self.transformers = bmt.PipelineTransformerBlockList([
@@ -52,10 +47,6 @@ class GPT_paddle(nn.Layer):
                 )
                 for _ in range(num_layers)
             ])
-        # self.transformers = nn.LayerList([
-        #     TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
-        #     for _ in range(num_layers)
-        # ])
 
         # LayerNorm
         self.layernorm = Layernorm(dim_model, dtype=dtype)
@@ -81,23 +72,23 @@ class GPT_paddle(nn.Layer):
         print("After adding position and word embeddings shape:", out.shape)
 
         # Transformer 层
-        for i, layer in enumerate(self.transformers):
-            out = layer(out, mask_2d, None)
-            print(f"After Transformer layer {i} shape:", out.shape)
-        # out = self.transformers(out, mask_2d, None)
-
+        # for i, layer in enumerate(self.transformers):
+            # out = layer(out, mask_2d, None)
+            # print(f"After Transformer layer {i} shape:", out.shape)
+        out = self.transformers(out, mask_2d, None)
+        print(f"After Transformer layer {i} shape:", out.shape)
         # LayerNorm
         out = self.layernorm(out)
         print("After LayerNorm shape:", out.shape)
 
-        try:
-            logits = self.word_emb(out, projection=True)
-            print("Logits shape:", logits.shape)
-        except Exception as e:
-            print("Error in word embedding projection:", e)
-            print("Shape of out before projection:", out.shape)
+        # try:
+        #     logits = self.word_emb(out, projection=True)
+        #     print("Logits shape:", logits.shape)
+        # except Exception as e:
+        #     print("Error in word embedding projection:", e)
+        #     print("Shape of out before projection:", out.shape)
         # 词嵌入投影
-        # logits = self.word_emb(out, projection=True)   #out维度和weight不匹配
+        logits = self.word_emb(out, projection=True)   #out维度和weight不匹配
         # logits = self.projection_layer(out) 
         # print("after self.word_emb")
 

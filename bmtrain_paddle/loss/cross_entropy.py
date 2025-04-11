@@ -20,20 +20,19 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
             softmax, out,
             ignore_index,
         )
-        ctx['ignore_index'] = ignore_index
-        # ctx.ignore_index = ignore_index
-        ctx['saved_tensors'] = (softmax, target)
+        ctx.ignore_index = ignore_index
+        ctx.save_for_backward(softmax, target)
         return out
         
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
         grad_output = grad_output.contiguous()
-        softmax, target = ctx['saved_tensors']
+        softmax, target = ctx.saved_tensors
         F.cross_entropy_backward_inplace(
             softmax.size(0), softmax.size(1),
             grad_output, target,
             softmax,
-            ctx['ignore_index'],
+            ctx.ignore_index,
         )
         return (softmax, None, None)
 
@@ -83,14 +82,14 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
         loss = paddle.log(sum_exp_logits.view(predicted_logits.shape)) - predicted_logits
 
         # Normalize
-        ctx['saved_tensors'] = (softmax, target_mask, masked_target_1d)
+        ctx.save_for_backward(softmax, target_mask, masked_target_1d)
 
         return loss
 
     @staticmethod
     def backward(ctx, grad_output):
         # Retreive tensors from the forward path.
-        softmax, target_mask, masked_target_1d = ctx['saved_tensors']
+        softmax, target_mask, masked_target_1d =ctx.saved_tensors
         # All the inputs have softmax as thier gradient.
         grad_input = softmax
         # For simplicity, work with the 2D gradient.
