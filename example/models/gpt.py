@@ -17,7 +17,9 @@ class GPT(bmt.DistributedModule):
         if config["tp_size"] > 1:
             self.word_emb = bmt.nn.VPEmbedding(vocab_size, dim_model, dtype=dtype)
         else:
+            print("word_emb Embedding", vocab_size, dim_model)
             self.word_emb = Embedding(vocab_size, dim_model, dtype=dtype)
+        print("pos_emb Embedding", max_distance, dim_model)
         self.pos_emb = Embedding(max_distance, dim_model, dtype=dtype)
         
         if config['pipe_size'] > 1:
@@ -58,6 +60,7 @@ class GPT(bmt.DistributedModule):
         # for layer in self.transformers:
         out = self.transformers(out, mask_2d, None)
         out = self.layernorm(out)
+        print("before self.word_emb(out, projection=True)", out.size())
         logits = self.word_emb(out, projection=True)
         bmt.inspect.record_tensor(logits, "logits")
 

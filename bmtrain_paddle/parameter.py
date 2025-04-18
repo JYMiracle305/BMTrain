@@ -6,7 +6,7 @@ from .global_var import config
 from . import nccl
 from .distributed import all_gather
 
-
+paddle.ParamAttr
 class DistributedParameter(paddle.Tensor):
     r"""
     DistributedParameter is a subclass of paddle.Tensor.
@@ -30,8 +30,8 @@ class DistributedParameter(paddle.Tensor):
     _in_block: bool
     _group: Optional[str]
 
-    def __new__(
-        cls,
+    def __init__(
+        self,
         data: paddle.Tensor,
         requires_grad: bool = True,
         init_method: Optional[Callable[["DistributedParameter"], None]] = None,
@@ -61,46 +61,36 @@ class DistributedParameter(paddle.Tensor):
             tp_original_shape = list(original_shape)
             tp_original_shape[tp_split_dim] *= config["tp_size"]
 
-        start_of_partition = cuda_storage_size * rank
-        end_of_partition = min(num_of_elements, cuda_storage_size * (rank + 1))
+        start = cuda_storage_size * rank
+        end = min(num_of_elements, cuda_storage_size * (rank + 1))
         
         # FX: cuda_tensor_size < 0 if num_of_elements is too small
-        cuda_tensor_size = max(end_of_partition - start_of_partition, 0)
+        cuda_tensor_size = max(end - start, 0)
 
         data_flat = paddle.flatten(data)
 
         local_shard = paddle.empty(tp_original_shape, dtype=data.dtype).cuda()
-        if end_of_partition > start_of_partition:
+        if end > start:
             paddle.assign(
-                data_flat[start_of_partition:end_of_partition], 
-                local_shard[:end_of_partition-start_of_partition]
+                data_flat[start:end], 
+                local_shard[:end-start]
             )
 
-        # ------------------- 参数构造 -------------------
-        name = paddle.utils.unique_name.generate('dist_param')
-        param = paddle.create_parameter(
-            shape=local_shard.shape,
-            dtype=local_shard.dtype,
-            default_initializer=paddle.nn.initializer.Assign(local_shard),
-            is_bias=False,
-            attr=paddle.ParamAttr(name=name)
-        )
-        param.stop_gradient = not requires_grad
-        param._original_shape = original_shape
-        param._start_partition = start_of_partition
-        param._end_partition = end_of_partition
-        param._init_method = init_method
-        param._in_block = False
-        param._tp_original_shape = tp_original_shape
-        param._tp_split_dim = tp_split_dim
-        param._zero_comm = comm
-        param._tp_mode = tp_mode
-
-        # ------------------- 初始化方法 -------------------
-        if init_method:
-            init_method(param)
-
-        return param
+        # obj = local_shard.as_subclass(cls)
+        self._original_shape = tuple(data.shape)
+        self._start_partition = start
+        self._end_partition = end
+        self._init_method = init_method
+        self._group = group if not tp_mode else "tp"
+        self._tp_mode = tp_mode
+        self._zero_comm = comm
+        self._tp_split_dim = tp_split_dim
+        self._tp_original_shape = list(data.shape)
+        if tp_mode and tp_split_dim >= 0:
+            self._tp_original_shape[tp_split_dim] *= config["tp_size"]
+        self._tp_original_shape = tuple(self._tp_original_shape)
+            
+        # return obj
 
     @property
     def group(self):
@@ -115,7 +105,7 @@ class DistributedParameter(paddle.Tensor):
             paddle.Tensor: The gathered data.
 
         """
-        with device.cuda.stream(config["load_stream"]):
+        with device.cuda.Stream(config["load_stream"]):
             output_tensor = OpAllGather.apply(self)
         current_stream = device.cuda.current_stream()
         output_tensor.record_stream(current_stream)

@@ -10,8 +10,12 @@ from paddle.vision.transforms import Compose, Resize, ToTensor, Normalize
 from paddle.io import Dataset, DataLoader
 import paddle.distributed.fleet as fleet
 from models import GPT_paddle as GPT
-
+import bmtrain_paddle as bmt
+from paddle_GPT2 import GPT2LMHeadModel
 def main():
+    bmt.init_distributed(
+        seed=0
+    )
     # 初始化分布式环境
     use_distributed = dist.get_world_size() > 1
     if use_distributed:
@@ -34,6 +38,7 @@ def main():
     world_size = dist.get_world_size()
     print(f"rank: {rank} world_size: {world_size}")
     # 模型定义
+    # model = GPT2LMHeadModel(
     model = GPT(
         num_layers=8,
         vocab_size=10240,
@@ -66,12 +71,12 @@ def main():
     # 优化器
     lr_scheduler = optim.lr.NoamDecay(
         d_model=2560,
-        warmup_steps=40,
-        learning_rate=1e-3,
+        warmup_steps=4000,
+        learning_rate=4,
         last_epoch=-1,
         verbose=False
     )
-    paddle.set_default_dtype('float16')
+    # paddle.set_default_dtype('float32')
 
     optimizer = optim.Adam(
         learning_rate=lr_scheduler,
@@ -79,6 +84,11 @@ def main():
         weight_decay=1e-2,
         multi_precision=True
     )
+    # for step in range(10000):
+    #     current_lr = lr_scheduler.get_lr()
+    #     print(f"Step {step} 学习率: {current_lr}")
+    #     lr_scheduler.step()
+    scaler = paddle.amp.GradScaler(init_loss_scaling=1024.0)
 
     # 分布式训练
     if world_size > 1:
@@ -94,12 +104,31 @@ def main():
         pos = paddle.arange(enc_input.shape[1]).unsqueeze(0)
         pos = paddle.tile(pos, [batch_size, 1])
         mask = pos < paddle.to_tensor(enc_length).unsqueeze(1)
-        logits = model(enc_input, pos, mask)
-        loss = loss_func(logits.reshape([-1, logits.shape[-1]]), targets.reshape([-1]))
 
-        loss.backward()
-        optimizer.step()
-        optimizer.clear_grad()
+        with paddle.amp.auto_cast():
+            logits = model(enc_input, pos, mask)
+            loss = loss_func(logits.reshape([-1, logits.shape[-1]]), targets.reshape([-1]))
+
+        # print(f"词嵌入输出范围: [{model.word_emb(enc_input).min().item()}, {model.word_emb(enc_input).max().item()}]")
+
+        # # print(f"当前梯度缩放因子: {scaler.get_loss_scale()}")
+        # print(f"平均损失值: {loss.item()}")
+        scaler.scale(loss).backward()
+
+
+        # for name, param in list(model.named_parameters())[:10]:
+        #     if param.grad is None:
+        #         print(f"参数 {name} 梯度为 None")
+        #     else:
+        #         print(f"参数 {name} 梯度均值: {param.grad.mean().item()}")
+
+        weight_before = model.word_emb.weight.clone()
+        scaler.step(optimizer)
+
+        weight_after = model.word_emb.weight.clone()
+        print(f"词嵌入权重变化: {(weight_after - weight_before).abs().mean().item()}")
+        
+        scaler.update()
 
         global_loss = loss.numpy()
         # 记录时间与损失
@@ -108,7 +137,7 @@ def main():
         avg_loss_recorder.record(global_loss)
 
         print(
-            "| Iter: {:6d} | loss: {:.4f} average_loss: {:.4f} | lr: {:.4e} | time: {:.4f}".format(
+            "| Iter: {:6d} | loss: {} average_loss: {:.4f} | lr: {} | time: {:.4f}".format(
                 iteration,
                 global_loss,
                 avg_loss_recorder.value,
@@ -116,11 +145,13 @@ def main():
                 avg_time_recorder.value
             )
         )
+        lr_scheduler.step()
+        optimizer.clear_grad()
 
-        if iteration % 1000 == 0:
-            paddle.save(model.state_dict(), f"ckpt-{iteration}.pdparams")
+    #     if iteration % 1000 == 0:
+    #         paddle.save(model.state_dict(), f"ckpt-{iteration}.pdparams")
 
-    paddle.save(model.state_dict(), "checkpoint.pdparams")
+    # paddle.save(model.state_dict(), "checkpoint.pdparams")
 
 class AverageRecorder:
     def __init__(self):

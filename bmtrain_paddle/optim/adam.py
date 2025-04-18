@@ -38,7 +38,26 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-        super().__init__(params, defaults)
+
+        params = list(params)
+
+        print("\n2222222222222222222222222222=== 原始参数信息 ===")
+        if len(params) == 0:
+            raise ValueError("参数列表为空！请检查模型是否注册了参数")
+        for idx, param in enumerate(params):
+            print(f"参数 {idx}:")
+            print(f"  名称: {param.name}")
+            print(f"  形状: {param.shape}")
+            print(f"  数据类型: {param.dtype}")
+            print(f"  设备位置: {param.place}")
+            print(f"  是否可训练: {not param.stop_gradient}")
+
+        parameters = [
+            {
+                'params': params,
+            }
+        ]
+        super().__init__(learning_rate=lr, parameters=parameters, weight_decay=weight_decay)
 
         self._hold_steps = hold_steps
 
@@ -71,7 +90,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
         for group in self._param_groups:
             for p in group["params"]:
                 if p.grad is not None and not p.stop_gradient:
-                    if p.grad.is_sparse:
+                    if p.grad.is_sparse():
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
                         )
@@ -80,27 +99,28 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                             "Adam only supports fp32, fp16 and bf16 gradients"
                         )
 
-                    state = self.state[p]
+                    # state = self.state[p]
+                    state = {}
                     # Lazy state initialization
                     if len(state) == 0:
                         state["step"] = 0
                         # Exponential moving average of gradient values
                         if p.dtype == paddle.float16:
                             state["exp_avg"] = paddle.zeros(
-                                p.size(), dtype=paddle.float16, device=p.device
+                                p.shape, dtype=paddle.float16
                             )  # on device
                         else:
                             state["exp_avg"] = paddle.zeros(
-                                p.size(), dtype=paddle.float32, device=p.device
+                                p.shape, dtype=paddle.float32
                             )  # on device
                         # Exponential moving average of squared gradient values
                         state["exp_avg_sq"] = paddle.zeros(
-                            p.size(), dtype=paddle.float32, device=p.device
+                            p.shape, dtype=paddle.float32
                         )  # on device
 
                         if p.dtype != paddle.float32:
                             state["_param_fp32"] = paddle.empty(
-                                p.size(), dtype=paddle.float32, device=p.device
+                                p.shape, dtype=paddle.float32
                             )  # on device
                             state["_param_fp32"].copy_(p)
 

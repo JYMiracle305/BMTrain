@@ -25,10 +25,12 @@ class Embedding(bmt.DistributedModule):
         self.norm_type = norm_type
         self.scale_grad_by_freq = scale_grad_by_freq
         if _weight is None:
+            print("if _weight is None:", num_embeddings, embedding_dim)
             self.weight = bmt.DistributedParameter(torch.empty(num_embeddings, embedding_dim, dtype=dtype, device="cuda"), init_method=torch.nn.init.normal_)
         else:
+            print("bmt.DistributedParameter(_weight)")
             self.weight = bmt.DistributedParameter(_weight)
-        
+        print("embedding weight:", self.weight.size())
         self.sparse = sparse
     
     @classmethod
@@ -82,6 +84,7 @@ class Embedding(bmt.DistributedModule):
                 self.norm_type, self.scale_grad_by_freq, self.sparse)
             return out
         else:
+            print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
             out = F.linear(input, self.weight)
             return out
 

@@ -261,7 +261,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
 
     @staticmethod
     def backward(ctx, grad_output):
-        input, weight, bias = ctx.saved_tensors
+        input, weight, bias = ctx.saved_tensor()
         gather_output = ctx.gather_output
 
         if ctx.reduce_output_type == ReduceType.REDUCE_SCATTER:

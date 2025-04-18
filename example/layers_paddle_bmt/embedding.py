@@ -1,10 +1,10 @@
 import math
 from typing import Optional
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
 import bmtrain_paddle as bmt
-class Embedding(nn.Layer):
+
+class Embedding(bmt.DistributedModule):
     def __init__(self, 
                  num_embeddings: int, 
                  embedding_dim: int, 
@@ -16,7 +16,7 @@ class Embedding(nn.Layer):
                  _weight: Optional[paddle.Tensor] = None,
                  dtype=None):
         super().__init__()
-
+        print("embeddings init", num_embeddings, embedding_dim)
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         if padding_idx is not None:
@@ -33,22 +33,22 @@ class Embedding(nn.Layer):
         #     self.weight = bmt.DistributedParameter(paddle.empty([num_embeddings, embedding_dim], dtype=dtype).cuda())
         # else:
         #     self.weight = bmt.DistributedParameter(_weight)
-
-        # print("-------------Embedding-----------", self.weight.shape)
-        self.sparse = sparse
-        print("sparse-----------", sparse)
         if _weight is None:
+            print("if _weight is None:", num_embeddings, embedding_dim)
             self.weight = self.create_parameter(
                 shape=[num_embeddings, embedding_dim],
                 dtype=dtype if dtype else paddle.get_default_dtype(),
-                default_initializer=nn.initializer.XavierNormal()
+                default_initializer=paddle.nn.initializer.XavierNormal()
             )
         else:
             self.weight = self.create_parameter(
                 shape=_weight.shape,
                 dtype=_weight.dtype,
-                default_initializer=nn.initializer.Assign(_weight)
+                default_initializer=paddle.nn.initializer.Assign(_weight)
             )
+        print("-------------Embedding-----------", self.weight.shape)
+        self.sparse = sparse
+        print("sparse-----------", sparse)
 
     @classmethod
     def from_pretrained(cls, embeddings, freeze=True, padding_idx=None,
@@ -56,6 +56,7 @@ class Embedding(nn.Layer):
                         sparse=False):
         assert embeddings.ndim == 2, 'Embeddings parameter is expected to be 2-dimensional'
         rows, cols = embeddings.shape
+        print("embeddings from_pretrained", rows, cols)
         embedding = cls(
             num_embeddings=rows,
             embedding_dim=cols,
@@ -78,13 +79,14 @@ class Embedding(nn.Layer):
             #     input, self.weight, self.padding_idx, self.max_norm,
             #     self.norm_type, self.scale_grad_by_freq, self.sparse
             # )
+            print(f"not projection Embedding input:{input.shape}, self.weight:{self.weight.shape}")
             out = F.embedding(
                 input, self.weight, self.padding_idx, self.sparse
             )
             return out
         else:
             #需要确保 input 的最后一个维度与 self.weight 的第一个维度一致
-            # print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
+            print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
             out = F.linear(input, self.weight.T)
             return out
 

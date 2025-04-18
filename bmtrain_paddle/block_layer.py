@@ -122,7 +122,7 @@ class Block(paddle.nn.Layer):
 
         # calc total number of parameters
         for name, param in ordered_parameters:
-            print("init_param_storage", name, param)
+            # print("init_param_storage", name, param)
             # if not isinstance(param, DistributedParameter):
             #     raise ValueError(
             #         f"All parameters in checkpoint block must be DistributedParameter. {param.type}"

@@ -53,7 +53,7 @@ class WarmupLRScheduler:
         lr = self.get_lr()
         self._current_lr = lr
         for group in self.optimizer._param_groups:
-            group["lr"] = lr
+            self.optimizer.set_lr(lr)
 
     def state_dict(self):
         return {

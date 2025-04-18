@@ -9,7 +9,7 @@ from bmtrain import inspect
 def main():
     bmt.init_distributed(
         seed=0,
-        tp_size=2,
+        tp_size=1,
     )
 
     model = GPT(
@@ -70,7 +70,7 @@ def main():
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(1000):
+    for iteration in range(1):
         # load data
         st = time.time()
 

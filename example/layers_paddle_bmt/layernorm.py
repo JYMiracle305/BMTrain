@@ -4,8 +4,7 @@ import paddle.nn as nn
 import paddle.nn.functional as F
 import bmtrain_paddle as bmt
 
-# class Layernorm(bmt.DistributedModule):
-class Layernorm(nn.Layer):
+class Layernorm(bmt.DistributedModule):
     __constants__ = ['normalized_shape', 'eps', 'elementwise_affine']
     normalized_shape: Tuple[int, ...]
     eps: float
@@ -20,26 +19,16 @@ class Layernorm(nn.Layer):
         self.normalized_shape = tuple(normalized_shape)  # type: ignore[arg-type]
         self.eps = eps
         self.elementwise_affine = elementwise_affine
-        # if self.elementwise_affine:
-        #     self.weight = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
-        #     # print("--------------------self.weight----------------", self.weight.shape)
-        #     self.bias = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
-        #     # print("--------------------self.bias----------------", self.bias.shape)
-        # else:
-        #     self.create_parameter('weight', None)
-        #     self.create_parameter('bias', None)
-        print("------------Layernorm-------------", self.normalized_shape)
         if self.elementwise_affine:
-            self.weight = self.create_parameter(
-                shape=self.normalized_shape,
-                dtype=dtype if dtype else paddle.get_default_dtype(),
-                default_initializer=nn.initializer.Constant(1.0)
-            )
-            self.bias = self.create_parameter(
-                shape=self.normalized_shape,
-                dtype=dtype if dtype else paddle.get_default_dtype(),
-                default_initializer=nn.initializer.Constant(0.0)
-            )
+            # self.weight = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
+            # print("--------------------self.weight----------------", self.weight.shape)
+            # self.bias = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
+            # print("--------------------self.bias----------------", self.bias.shape)
+            print("------------Layernorm-------------", self.normalized_shape)
+            self.weight = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
+                    default_initializer=paddle.nn.initializer.XavierNormal())
+            self.bias = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
+                    default_initializer=paddle.nn.initializer.Constant(0.0))
         else:
             self.weight = None
             self.bias = None

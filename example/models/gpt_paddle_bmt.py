@@ -4,9 +4,9 @@ import paddle.nn as nn
 from paddle.distributed.fleet.utils import recompute
 import bmtrain_paddle as bmt
 from bmtrain_paddle.global_var import config
-from layers_paddle import TransformerEncoder, Layernorm, Embedding
+from layers_paddle_bmt import TransformerEncoder, Layernorm, Embedding
 
-class GPT_paddle(nn.Layer):
+class GPT_paddle_bmt(bmt.DistributedModule):
     def __init__(self,
                  num_layers: int,
                  vocab_size: int,
@@ -28,14 +28,24 @@ class GPT_paddle(nn.Layer):
             self.word_emb = Embedding(vocab_size, dim_model, dtype=dtype)
         self.pos_emb = Embedding(max_distance, dim_model, dtype=dtype)
         # Transformer 层
-        self.transformers = paddle.nn.LayerList([
-            TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
-            for _ in range(num_layers)
-        ])
+        if config['pipe_size'] > 1:
+            self.transformers = bmt.PipelineTransformerBlockList([
+                bmt.Block(
+                    TransformerEncoder(
+                        dim_model, dim_head, num_heads, dim_ff, bias, dtype
+                    )
+                    , mode="PIPE"
+                )
+                for _ in range(num_layers)
+            ])
+        else:
+            self.transformers = paddle.nn.LayerList([
+                TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
+                for _ in range(num_layers)
+            ])
+
         # LayerNorm
         self.layernorm = Layernorm(dim_model, dtype=dtype)
-        self.projection_layer = nn.Linear(dim_model, vocab_size)
-        self.projection_layer.weight = self.word_emb.weight
 
     def forward(self,
                 input: paddle.Tensor,   # (batch, seq_len)
@@ -52,27 +62,22 @@ class GPT_paddle(nn.Layer):
             input = paddle.split(input, num_or_sections=self.tp_size, axis=1)[config["tp_rank"]]
             pos = paddle.split(pos, num_or_sections=self.tp_size, axis=1)[config["tp_rank"]]
 
-        # embeding层
+        # print("before  out = self.pos_emb(pos) + self.word_emb(input)")
+        print("input", input.shape)
+        # 嵌入层
         out = self.pos_emb(pos) + self.word_emb(input)
+        print("After adding position and word embeddings shape:", out.shape)
 
-        # Transformer 层
+        # out = self.transformers(out, mask_2d, None)
         for i, layer in enumerate(self.transformers):
             out = layer(out, mask_2d, None)
             print(f"After Transformer layer {i} shape:", out.shape)
-        
-        # LayerNorm
-        out = self.layernorm(out)
-        try:
-            logits = self.word_emb(out, projection=True)
-            print("Logits shape:", logits.shape)
-        except Exception as e:
-            print("Error in word embedding projection:", e)
-            print("Shape of out before projection:", out.shape)
-        # 词嵌入投影
-        logits = self.word_emb(out, projection=True)
-        # print("after self.word_emb")
+        print(f"After Transformer layer shape:", out.shape)
 
-        # 记录 logits（用于调试或检查）
-        # print("Logits:", logits)
-        # bmt.inspect.record_tensor(logits, "logits")
+        out = self.layernorm(out)
+        print("After LayerNorm shape:", out.shape)
+
+        # # 词嵌入投影
+        logits = self.word_emb(out, projection=True)
+
         return logits

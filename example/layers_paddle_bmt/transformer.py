@@ -1,13 +1,11 @@
 from typing import Optional
 import paddle
 import paddle.nn as nn
-from paddle.nn import LayerNorm, Linear, Dropout
 import bmtrain_paddle as bmt
 
-from layers_paddle import Layernorm, Feedforward, Attention
+from layers_paddle_bmt import Layernorm, Feedforward, Attention
 
-# class TransformerEncoder(bmt.DistributedModule):
-class TransformerEncoder(nn.Layer):
+class TransformerEncoder(bmt.DistributedModule):
     def __init__(self,
                  dim_model: int,
                  dim_head: int,
@@ -38,10 +36,12 @@ class TransformerEncoder(nn.Layer):
         x = self.ln_attn(hidden)
         x = self.attn(x, x, mask, position_bias)
         hidden = hidden + x
-
+        print("after transformer Attention shape", hidden.shape)
         # Feedforward
         x = self.ln_ff(hidden)
+        print("after transformer before Feedforward shape", x.shape)
         x = self.ff(x)
         hidden = hidden + x
-
+        print("after transformer Feedforward shape", hidden.shape)
+    
         return hidden

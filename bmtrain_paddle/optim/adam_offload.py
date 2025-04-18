@@ -46,29 +46,30 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
             'weight_decay': weight_decay
         }
         
-        print("\n1111111111111111111111111111=== 原始参数信息 ===")
-        if len(params) == 0:
-            raise ValueError("参数列表为空！请检查模型是否注册了参数")
+        print("\n[Optimizer] 被优化的参数列表:")
+        temp_str = "NA"
         for idx, param in enumerate(params):
-            print(f"参数 {idx}:")
-            print(f"  名称: {param.name}")
-            print(f"  形状: {param.shape}")
-            print(f"  数据类型: {param.dtype}")
-            print(f"  设备位置: {param.place}")
-            print(f"  是否可训练: {not param.stop_gradient}")
+            print(f"  - 参数 {idx}:")
+            print(f"    名称: {param.name}")
+            print(f"    形状: {param.shape}")
+            print(f"    数据类型: {param.dtype}")
+            print(f"    设备位置: {param.place}")
+            print(f"    是否可训练: {not param.stop_gradient}")
+            print(f"    所属层类型: {param.__class__.__name__}")  # 显示参数所属的类名
+        # ===============================================
         
         params = list(params)
 
-        print("\n2222222222222222222222222222=== 原始参数信息 ===")
-        if len(params) == 0:
-            raise ValueError("参数列表为空！请检查模型是否注册了参数")
-        for idx, param in enumerate(params):
-            print(f"参数 {idx}:")
-            print(f"  名称: {param.name}")
-            print(f"  形状: {param.shape}")
-            print(f"  数据类型: {param.dtype}")
-            print(f"  设备位置: {param.place}")
-            print(f"  是否可训练: {not param.stop_gradient}")
+        # print("\n2222222222222222222222222222=== 原始参数信息 ===")
+        # if len(params) == 0:
+        #     raise ValueError("参数列表为空！请检查模型是否注册了参数")
+        # for idx, param in enumerate(params):
+        #     print(f"参数 {idx}:")
+        #     print(f"  名称: {param.name}")
+        #     print(f"  形状: {param.shape}")
+        #     print(f"  数据类型: {param.dtype}")
+        #     print(f"  设备位置: {param.place}")
+        #     print(f"  是否可训练: {not param.stop_gradient}")
 
         parameters = [
             {
@@ -117,7 +118,20 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
         for group in self._param_groups:
             for p in group["params"]:
                 if p.grad is not None and not p.stop_gradient:
-                    if p.grad.is_sparse:
+                    # ========== 新增：打印梯度信息 ==========
+                    print(f"\n[Optimizer] 检查参数: {p.name}")
+                    print(f"  - 形状: {p.shape}")
+                    print(f"  - 数据类型: {p.dtype}")
+                    print(f"  - 梯度是否稀疏: {p.grad.is_sparse()}")
+                    # =====================================
+                    if p.grad.is_sparse():
+                         # ========== 增强错误信息 ==========
+                        print(f"❌ 检测到稀疏梯度的参数详细信息:")
+                        print(f"   参数名称: {p.name}")
+                        print(f"   参数形状: {p.shape}")
+                        print(f"   所属层类型: {p.__class__.__name__}")
+                        print(f"   关联的网络层可能为: {'Embedding' if 'embedding' in p.name.lower() else '其他层'}")
+                        # ================================
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
                         )
