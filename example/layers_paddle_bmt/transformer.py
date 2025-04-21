@@ -36,12 +36,12 @@ class TransformerEncoder(bmt.DistributedModule):
         x = self.ln_attn(hidden)
         x = self.attn(x, x, mask, position_bias)
         hidden = hidden + x
-        print("after transformer Attention shape", hidden.shape)
+        # print("after transformer Attention shape", hidden.shape)
         # Feedforward
         x = self.ln_ff(hidden)
-        print("after transformer before Feedforward shape", x.shape)
+        # print("after transformer before Feedforward shape", x.shape)
         x = self.ff(x)
         hidden = hidden + x
-        print("after transformer Feedforward shape", hidden.shape)
+        # print("after transformer Feedforward shape", hidden.shape)
     
         return hidden

@@ -66,24 +66,10 @@ def main():
         loss_func = paddle.nn.CrossEntropyLoss(ignore_index=-100)
 
     # print(f"model.parameters() {model.parameters()}")
-    # optimizer = optim.AdamOptimizer(model.parameters(), weight_decay=1e-2)
 
-    # lr_scheduler = bmt.lr_scheduler.Noam(optimizer, start_lr=1e-3, warmup_iter=40, end_iter=1000, num_iter=0)
-    lr_scheduler = paddle.optimizer.lr.NoamDecay(
-        d_model=2560,
-        warmup_steps=4000,
-        learning_rate=4,
-        last_epoch=-1,
-        verbose=False
-    )
-    # paddle.set_default_dtype('float32')
+    optimizer = optim.AdamOptimizer(model.parameters(), weight_decay=1e-2)
 
-    optimizer = paddle.optimizer.Adam(
-        learning_rate=lr_scheduler,
-        parameters=model.parameters(),
-        weight_decay=1e-2,
-        multi_precision=True
-    )
+    lr_scheduler = bmt.lr_scheduler.Noam(optimizer, start_lr=1e-3, warmup_iter=40, end_iter=1000, num_iter=0)
 
     optim_manager = optim.OptimManager(loss_scale=2**20)
     optim_manager.add_optimizer(optimizer, lr_scheduler)
@@ -95,7 +81,7 @@ def main():
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(1000):
+    for iteration in range(100000):
         # load data
         st = time.time()
 
@@ -170,15 +156,6 @@ def main():
         #         avg_loss_recorder.value.item(),
         #         lr_scheduler.current_lr,
         #         optimizer.loss_scale,
-        #         avg_time_recorder.value
-        #     )
-        # )
-        # bmt.print_rank(
-        #     "| Iter: {:6d} | loss: {:.4f} average_loss: {:.4f} | lr: {:.4e} | time: {:.4f}".format(
-        #         iteration,
-        #         global_loss,
-        #         avg_loss_recorder.value,
-        #         lr_scheduler.get_lr(),
         #         avg_time_recorder.value
         #     )
         # )

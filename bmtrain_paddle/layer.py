@@ -10,12 +10,6 @@ class DistributedModule(paddle.nn.Layer):
     
     """
 
-    def register_parameter(self, name, param):
-        # 显式注册参数到 _parameters 字典
-        if not isinstance(param, DistributedParameter):
-            raise TypeError("DistributedParameter")
-        self._parameters[name] = param
-
     def __getattr__(self, name: str):
         ret = super().__getattr__(name)
         # gather distributed parameters if not in bmt.Block

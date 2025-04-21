@@ -38,8 +38,12 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
             raise ValueError("Invalid weight_decay value: {}".format(weight_decay))
 
         defaults = dict(lr=lr, betas=betas, eps=eps, weight_decay=weight_decay)
-
-        params = list(params)
+        self.lr = lr
+        self.beta1 = betas[0]
+        self.beta2 = betas[1]
+        self.eps = eps
+        self.weight_decay = weight_decay
+        # params = list(params)
 
         print("\n2222222222222222222222222222=== 原始参数信息 ===")
         if len(params) == 0:
@@ -52,12 +56,12 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
             print(f"  设备位置: {param.place}")
             print(f"  是否可训练: {not param.stop_gradient}")
 
-        parameters = [
-            {
-                'params': params,
-            }
-        ]
-        super().__init__(learning_rate=lr, parameters=parameters, weight_decay=weight_decay)
+        # parameters = [
+        #     {
+        #         'params': params,
+        #     }
+        # ]
+        super().__init__(learning_rate=lr, parameters=params, weight_decay=weight_decay)
 
         self._hold_steps = hold_steps
 
@@ -86,96 +90,104 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
             with paddle.enable_grad():
                 loss = closure()
 
+        # for idx, group in enumerate(self._param_groups):
+        #     print(f"参数组 {idx} 类型: {type(group)}")
+        #     if isinstance(group, dict):
+        #         print(f"  包含的键: {group.keys()}")
+        #         if "params" in group:
+        #             params = group["params"]
+        #             print(f"  'params' 类型: {type(params)}, 长度: {len(params)}")
+        #             for p in params:
+        #                 print(f"    参数类型: {type(p)}, 名称: {getattr(p, 'name', '无')}")
+        #         else:
+        #             print("  错误: 'params' 键缺失！")
+        #     else:
+        #         print("  错误: 参数组不是字典！")
         # update parameters
-        for group in self._param_groups:
-            for p in group["params"]:
-                if p.grad is not None and not p.stop_gradient:
-                    if p.grad.is_sparse():
-                        raise RuntimeError(
-                            "Adam does not support sparse gradients, please consider SparseAdam instead"
-                        )
-                    if p.dtype not in [paddle.float32, paddle.float16, paddle.bfloat16]:
-                        raise RuntimeError(
-                            "Adam only supports fp32, fp16 and bf16 gradients"
-                        )
+        # for group in self._param_groups:
+        #     for p in group["params"]:
+        for p in self._param_groups:
+            if p.grad is not None and not p.stop_gradient:
+                if p.grad.is_sparse():
+                    raise RuntimeError(
+                        "Adam does not support sparse gradients, please consider SparseAdam instead"
+                    )
+                if p.dtype not in [paddle.float32, paddle.float16, paddle.bfloat16]:
+                    raise RuntimeError(
+                        "Adam only supports fp32, fp16 and bf16 gradients"
+                    )
 
-                    # state = self.state[p]
-                    state = {}
-                    # Lazy state initialization
-                    if len(state) == 0:
-                        state["step"] = 0
-                        # Exponential moving average of gradient values
-                        if p.dtype == paddle.float16:
-                            state["exp_avg"] = paddle.zeros(
-                                p.shape, dtype=paddle.float16
-                            )  # on device
-                        else:
-                            state["exp_avg"] = paddle.zeros(
-                                p.shape, dtype=paddle.float32
-                            )  # on device
-                        # Exponential moving average of squared gradient values
-                        state["exp_avg_sq"] = paddle.zeros(
+                # state = self.state[p]
+                state = {}
+
+                # Lazy state initialization
+                if len(state) == 0:
+                    state["step"] = 0
+                    # Exponential moving average of gradient values
+                    if p.dtype == paddle.float16:
+                        state["exp_avg"] = paddle.zeros(
+                            p.shape, dtype=paddle.float16
+                        ).cuda()  # on device
+                    else:
+                        state["exp_avg"] = paddle.zeros(
                             p.shape, dtype=paddle.float32
-                        )  # on device
+                        ).cuda()  # on device
+                    # Exponential moving average of squared gradient values
+                    state["exp_avg_sq"] = paddle.zeros(
+                        p.shape, dtype=paddle.float32
+                    ).cuda()  # on device
 
-                        if p.dtype != paddle.float32:
-                            state["_param_fp32"] = paddle.empty(
-                                p.shape, dtype=paddle.float32
-                            )  # on device
-                            state["_param_fp32"].copy_(p)
+                    if p.dtype != paddle.float32:
+                        state["_param_fp32"] = paddle.empty(
+                            p.shape, dtype=paddle.float32
+                        ).cuda() # on device
+                        state["_param_fp32"].copy_(p.cast(paddle.float32), True)
 
-                    # update the steps for each param group update
-                    if ("maximize" in group) and (group["maximize"] is True):
-                        grad = -p.grad
-                    else:
-                        grad = p.grad
+                # update the steps for each param group update
+                # if ("maximize" in group) and (group["maximize"] is True):
+                #     grad = -p.grad
+                # else:
+                #     grad = p.grad
+                grad = p.grad
+                if p.dtype == paddle.float32:
+                    other_kwargs = {}
+                    if (
+                        "maximize"
+                        in inspect.signature(
+                            paddle.optimizer.Adam
+                        ).parameters
+                    ):
+                        other_kwargs["maximize"] = False
+                    paddle.optimizer.Adam(
+                        parameters = p,
+                        beta1=self.beta1,
+                        beta2=self.beta2,
+                        learning_rate=0.0 if state["step"] < self._hold_steps else self.lr,
+                        weight_decay=self.weight_decay,
+                        epsilon=self.eps
+                    )
+                    state["step"] += 1
+                else:
+                    f = F.adam_fp16 if p.dtype == paddle.float16 else F.adam_bf16
+                    state["step"] += 1
 
-                    if p.dtype == paddle.float32:
-                        other_kwargs = {}
-                        if (
-                            "maximize"
-                            in inspect.signature(
-                                paddle._legacy_C_ops.adam
-                            ).parameters
-                        ):
-                            other_kwargs["maximize"] = False
-                        paddle._legacy_C_ops.adam(
-                            [p],
-                            [grad / scale],
-                            [state["exp_avg"]],
-                            [state["exp_avg_sq"]],
-                            [],
-                            (
-                                [state["step"]]
-                                if check_torch_version("1.12.0") < 0
-                                else [paddle.tensor(state["step"])]
-                            ),
-                            amsgrad=False,
-                            beta1=group["betas"][0],
-                            beta2=group["betas"][1],
-                            lr=0.0 if state["step"] < self._hold_steps else group["lr"],
-                            weight_decay=group["weight_decay"],
-                            eps=group["eps"],
-                            **other_kwargs
-                        )
-                        state["step"] += 1
-                    else:
-                        f = F.adam_fp16 if p.dtype == paddle.float16 else F.adam_bf16
-                        state["step"] += 1
-                        f(
-                            state["_param_fp32"],  # fp32
-                            p,  # fp16
-                            grad,  # fp16
-                            state["exp_avg"],  # fp16: m
-                            state["exp_avg_sq"],  # fp32: v
-                            group["betas"][0],
-                            group["betas"][1],
-                            group["eps"],
-                            0.0 if state["step"] < self._hold_steps else group["lr"],
-                            scale,
-                            group["weight_decay"],
-                            state["step"],
-                        )
+                    # print("判断参数是否符合预期", state["_param_fp32"].is_contiguous(),
+                    #       state["_param_fp32"].place.is_gpu_place(), paddle.CUDAPlace)
+                    # print("state['_param_fp32']", state["_param_fp32"].numel(), int(state["_param_fp32"].numel().item()))
+                    f(
+                        state["_param_fp32"],  # fp32
+                        p,  # fp16
+                        grad,  # fp16
+                        state["exp_avg"],  # fp16: m
+                        state["exp_avg_sq"],  # fp32: v
+                        self.beta1,
+                        self.beta2,
+                        self.eps,
+                        0.0 if state["step"] < self._hold_steps else self.lr,
+                        scale,
+                        self.weight_decay,
+                        state["step"],
+                    )
 
         return loss
 

@@ -1,7 +1,7 @@
 from .. import C
 import paddle
 
-CHECK_INPUT = lambda x: x.is_contiguous() and isinstance(x.place, paddle.CUDAPlace)
+CHECK_INPUT = lambda x: x.is_contiguous() and x.place.is_gpu_place()
 
 
 def bf16_from_fp32(param_fp32):
@@ -136,9 +136,10 @@ def adam_fp16(
     ), "param_fp32 and v_fp32 must have the same number of elements"
     bias_correction1 = 1 - beta1**step
     bias_correction2 = 1 - beta2**step
-    # stream = torch.cuda.current_stream().cuda_stream
+    # stream = paddle.device.current_stream()
+    stream = 0
     C.adam_fp16_launcher(
-        param_fp32.numel(),
+        int(param_fp32.numel().item()),
         param_fp32.data_ptr(),
         param_fp16.data_ptr(),
         g_fp16.data_ptr(),
@@ -152,7 +153,7 @@ def adam_fp16(
         weight_decay,
         bias_correction1,
         bias_correction2,
-        # stream,
+        stream,
     )
 
 

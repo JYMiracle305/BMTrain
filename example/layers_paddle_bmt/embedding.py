@@ -35,6 +35,8 @@ class Embedding(bmt.DistributedModule):
         #     self.weight = bmt.DistributedParameter(_weight)
         if _weight is None:
             print("if _weight is None:", num_embeddings, embedding_dim)
+            dtype=dtype if dtype else paddle.get_default_dtype()
+            print("embedding weight dtype", dtype)
             self.weight = self.create_parameter(
                 shape=[num_embeddings, embedding_dim],
                 dtype=dtype if dtype else paddle.get_default_dtype(),

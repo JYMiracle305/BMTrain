@@ -7,7 +7,7 @@ class OpLinear(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x, weight, bias=None):
         ctx.save_for_backward(x, weight, bias)
-        print(f"forward x {x.shape} weight {weight.shape} bias {bias.shape}")
+        # print(f"forward x {x.shape} weight {weight.shape} bias {bias.shape}")
         return F.linear(x, weight, bias)
 
     @staticmethod
@@ -16,7 +16,7 @@ class OpLinear(paddle.autograd.PyLayer):
         x, weight, bias = ctx.saved_tensor()
         grad_x = grad_weight = grad_bias = None
         # if x.requires_grad:
-        print(f"backward grad_output {grad_output.shape} weight {weight.shape}")
+        # print(f"backward grad_output {grad_output.shape} weight {weight.shape}")
         grad_x = grad_output.matmul(weight.T)
         # if weight.requires_grad:
         dim = grad_output.dim()
