@@ -16,7 +16,8 @@ from bmtrain_paddle import inspect
 
 def main():
     bmt.init_distributed(
-        seed=0
+        seed=0,
+        tp_size=2,
     )
 
     model = GPT(
@@ -28,14 +29,14 @@ def main():
         dim_ff=8192,
         max_distance=1024,
         bias=True,
-        dtype=paddle.float32    #float16
+        dtype=paddle.float16    #float16
     )
 
-    # bmt.init_parameters(model)
+    bmt.init_parameters(model)
 
     bmt.print_rank("Model memory")
     # bmt.print_rank(paddle.cuda.memory_summary())
-    # bmt.synchronize()
+    bmt.synchronize()
 
     # generate dummy data for each rank
     paddle.seed(1234)
@@ -81,7 +82,7 @@ def main():
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(100000):
+    for iteration in range(1000):
         # load data
         st = time.time()
 

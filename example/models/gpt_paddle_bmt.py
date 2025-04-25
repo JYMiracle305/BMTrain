@@ -59,8 +59,8 @@ class GPT_paddle_bmt(bmt.DistributedModule):
 
         # 如果使用模型并行，分割输入
         if config["tp_size"] > 1:
-            input = paddle.split(input, num_or_sections=self.tp_size, axis=1)[config["tp_rank"]]
-            pos = paddle.split(pos, num_or_sections=self.tp_size, axis=1)[config["tp_rank"]]
+            input = paddle.split(input, num_or_sections=config["tp_size"], axis=1)[config["tp_rank"]]
+            pos = paddle.split(pos, num_or_sections=config["tp_size"], axis=1)[config["tp_rank"]]
 
         # print("before  out = self.pos_emb(pos) + self.word_emb(input)")
         # print("input", input.shape)

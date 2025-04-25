@@ -27,20 +27,20 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
     dim = input.dim()
     shape = list(input.shape)
     if dim > 2:
-        input = input.view(-1, input.shape[-1])
+        input = input.reshape([-1, input.shape[-1]])
     tp_size = config["tp_size"]
     current_stream = paddle.device.cuda.current_stream()
     comm_stream = config["tp_comm_stream"]
 
     rounds = async_chunks
-    inputs = input.chunk(rounds, dim=0)
+    inputs = input.chunk(rounds, axis=0)
     comm_stream.wait_stream(current_stream)
     outputs = [None] * tp_size * rounds
 
     input = all_gather(inputs[0], config["tp_comm"])
     input = input.flatten(0, 1)
     out = F.linear(input, weight, bias)
-    outs = out.chunk(tp_size, dim=0)
+    outs = out.chunk(tp_size, axis=0)
     for i in range(tp_size):
         outputs[i * rounds] = outs[i]
 
@@ -53,16 +53,16 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
 
         current_stream.wait_stream(comm_stream)
         out = F.linear(input, weight, bias)
-        outs = out.chunk(tp_size, dim=0)
+        outs = out.chunk(tp_size, axis=0)
         for j in range(tp_size):
             outputs[(i + 1) + j * rounds] = outs[j]
 
-    out = paddle.cat(outputs, dim=0)
+    out = paddle.concat(outputs, axis=0)
     if dim > 2:
         out_shape = list(out.shape)
         shape[-1] = out_shape[-1]
         shape[0] = shape[0] * tp_size
-        out = out.view(shape)
+        out = out.reshape(shape)
     return out
 
 
@@ -73,8 +73,8 @@ def async_reduce_scatter_linear_func(input, weight, bias, async_chunks=2):
     input_shape = list(input.shape)
     dim = input.dim()
     if dim > 2:
-        input = input.view(-1, input.shape[-1])
-    inputs = input.chunk(rounds * tp_size, dim=0)
+        input = input.reshape(-1, input.shape[-1])
+    inputs = input.chunk(rounds * tp_size, axis=0)
     current_stream = paddle.device.cuda.current_stream()
 
     outputs = [None] * rounds
@@ -82,7 +82,7 @@ def async_reduce_scatter_linear_func(input, weight, bias, async_chunks=2):
         input = [None] * tp_size
         for j in range(tp_size):
             input[j] = inputs[j * rounds + i]
-        input = paddle.cat(input, dim=0)
+        input = paddle.concat(input, axis=0)
         out = F.linear(input, weight, bias)
         with paddle.device.cuda.stream_guard(comm_stream):
             comm_stream.wait_stream(current_stream)
@@ -220,7 +220,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
     ):
         if reduce_output_type is not None:
             reduce_output_type = ReduceType(reduce_output_type)
-
+        print("OpParallelLinear forward", input.shape, weight.shape, bias.shape)
         ctx.save_for_backward(input, weight, bias)
         ctx.gather_output = gather_output
         ctx.split_input = split_input

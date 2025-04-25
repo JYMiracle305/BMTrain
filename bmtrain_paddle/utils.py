@@ -1,9 +1,11 @@
 import paddle
 import sys
-from typing import Any, Dict, Iterable, Optional
+from typing import Any, Dict, Iterable, Optional, Tuple
 from .global_var import config
 import os
 import ctypes
+import cupy
+from weakref import WeakKeyDictionary
 
 ALIGN = 4
 ROW_WIDTH = 60
@@ -151,21 +153,35 @@ def tp_split_tensor(tensor, split_dim):
     tmp_tensor.copy_(sub_tensor)
     return tmp_tensor
 
-def get_ptr(tensor: paddle.Tensor) -> int:
-    # 获取 Tensor 底层数据指针 (需确保 Tensor 在 GPU 上)
-    if not tensor.place.is_gpu_place():
-        raise ValueError("Tensor 必须位于 GPU")
-    
-    class CUDAPtrHolder(ctypes.Structure):
-        _fields_ = [("data", ctypes.c_void_p)]
-    
-    holder = CUDAPtrHolder()
-    ctypes.pythonapi.PyCapsule_GetPointer(
-        ctypes.py_object(tensor.value().get_tensor()._get_capsule()),
-        ctypes.c_char_p(b"gpu_mem"),
-        ctypes.byref(holder)
-    )
-    return holder.data
+_tensor_refs = WeakKeyDictionary()
+
+def tensor_to_c_ptr(tensor: paddle.Tensor):
+    """
+    将 PaddlePaddle Tensor 转换为 C 指针及元信息（适用于 CPU/GPU Tensor）。
+
+    Args:
+        tensor (paddle.Tensor): 输入的 Paddle Tensor，支持任意形状和设备。
+
+    Returns:
+        Tuple:
+            - c_ptr (ctypes.POINTER): 数据指针（void* 类型，需根据 dtype 转换为具体类型）。
+            - shape (Tuple[int]): 张量形状。
+            - meta (Dict): 包含 dtype（str）和 numel（int）的元信息。
+
+    Raises:
+        TypeError: 输入非 Tensor 时抛出异常。
+    """
+    if not isinstance(tensor, paddle.Tensor):
+        raise TypeError("输入必须为 paddle.Tensor 类型")
+
+    # 确保内存连续
+    tensor = tensor.contiguous()
+
+    cupy_array = cupy.asarray(tensor)
+    _tensor_refs[tensor] = cupy_array
+
+    return ctypes.c_void_p(cupy_array.data.ptr)
+
 class AverageRecorder:
     """A utility class to record the average value of a quantity over time.
 

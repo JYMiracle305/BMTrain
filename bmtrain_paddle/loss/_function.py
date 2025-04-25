@@ -1,7 +1,7 @@
 from .. import C
 import paddle
 
-CHECK_INPUT = lambda x: x.is_contiguous() and isinstance(x.place, paddle.CUDAPlace)
+CHECK_INPUT = lambda x: x.is_contiguous() and x.place.is_gpu_place()
 
 
 def has_inf_nan(g_half: paddle.Tensor, out: paddle.Tensor) -> None:

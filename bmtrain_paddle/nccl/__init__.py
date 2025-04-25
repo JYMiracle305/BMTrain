@@ -4,7 +4,7 @@ import paddle
 from .. import C
 from .enums import *
 import ctypes
-from ..utils import get_ptr
+from ..utils import tensor_to_c_ptr
 class NCCLCommunicator:
     """
     NCCL communicator stores the communicator handle.
@@ -97,6 +97,7 @@ def commRank(comm : NCCLCommunicator):
         comm (NCCLCommunicator): NCCL communicator.
     """
     return C.ncclCommUserRank(comm.ptr)
+
 def allReduce(
         src : paddle.Tensor,
         dst : paddle.Tensor,
@@ -119,15 +120,19 @@ def allReduce(
     assert src.dtype == dst.dtype, "send and recv buffers must be the same type"
     assert src.place.is_gpu_place() and dst.place.is_gpu_place(), "Tensors must be on GPU"
 
-    sendbuff = get_ptr(src)
-    recvbuff = get_ptr(dst)
+    print(f"src {src} dst {dst}")
+    sendbuff = tensor_to_c_ptr(src)
+    recvbuff = tensor_to_c_ptr(dst)
 
-    count = src.numel()
+    print(f"src_ptr: {hex(sendbuff.value)}")  # 应为非零地址（如0x7f8a5c000000）
+    print(f"dst_ptr: {hex(recvbuff.value)}")  # 应为非零地址
+
+    count = src.numel().item()
     datatype = dtype2nccl(src.dtype)
     operator = op2nccl(op)
 
-    assert src.size() == dst.size(), "Buffer size not aligned"
-    print("------------nccl all reduce--------------")
+    assert src.shape == dst.shape, "Buffer size not aligned"
+    print("------------nccl all reduce--------------", paddle.device.cuda.current_stream().cuda_stream)
     C.ncclAllReduce(
         sendbuff.value,
         recvbuff.value,
@@ -137,6 +142,9 @@ def allReduce(
         comm.ptr,
         paddle.device.cuda.current_stream().cuda_stream
     )
+    print(f"after src_ptr: {hex(sendbuff.value)}")  # 应为非零地址（如0x7f8a5c000000）
+    print(f"after dst_ptr: {hex(recvbuff.value)}")  # 应为非零地址
+
 def send(src : paddle.Tensor,
          peer : int,
          comm : NCCLCommunicator
@@ -164,8 +172,8 @@ def recv(dst : paddle.Tensor,
          peer : int,
          comm : NCCLCommunicator
         ):
-    recvbuff = dst._ptr()
-    count = dst.size()
+    recvbuff = tensor_to_c_ptr(dst)
+    count = dst.numel().item()
     datatype = dtype2nccl(dst.dtype)
     C.ncclRecv(
         recvbuff,
@@ -199,12 +207,12 @@ def broadcast(
     assert src.dtype == dst.dtype, "send and recv buffers must be the same type"
     assert src.place.is_gpu_place() and dst.place.is_gpu_place(), "Tensors must be on GPU"
 
-    sendbuff = src._ptr()
-    recvbuff = dst._ptr()
-    count = src.numel()
+    sendbuff = tensor_to_c_ptr(src)
+    recvbuff = tensor_to_c_ptr(dst)
+    count = src.numel().item()
     datatype = dtype2nccl(src.dtype)
 
-    assert dst.numel() == src.numel(), "Buffer size not aligned"
+    assert dst.numel().item() == src.numel().item(), "Buffer size not aligned"
     C.ncclBroadcast(
         sendbuff, 
         recvbuff, 
@@ -239,13 +247,13 @@ def reduce(
     assert src.dtype == dst.dtype, "send and recv buffers must be the same type"
     assert src.place.is_gpu_place() and dst.place.is_gpu_place(), "Tensors must be on GPU"
 
-    sendbuff = src._ptr()
-    recvbuff = dst._ptr()
-    count = src.numel()
+    sendbuff = tensor_to_c_ptr(src)
+    recvbuff = tensor_to_c_ptr(dst)
+    count = src.numel().item()
     datatype = dtype2nccl(src.dtype)
     operator = op2nccl(op)
 
-    assert dst.numel() == src.numel(), "Buffer size not aligned"
+    assert dst.numel().item() == src.numel().item(), "Buffer size not aligned"
     C.ncclReduce(
         sendbuff,
         recvbuff,
@@ -277,14 +285,14 @@ def allGather(
     assert src.dtype == dst.dtype, "send and recv buffers must be the same time"
     assert src.place.is_gpu_place() and dst.place.is_gpu_place(), "Tensors must be on GPU"
 
-    sendbuff = src._ptr()
-    recvbuff = dst._ptr()
-    sendcount = src.numel()
+    sendbuff = tensor_to_c_ptr(src)
+    recvbuff = tensor_to_c_ptr(dst)
+    sendcount = src.numel().item()
     datatype = dtype2nccl(src.dtype)
-    assert dst.numel() % sendcount == 0, "Buffer size not aligned"
+    assert dst.numel().item() % sendcount == 0, "Buffer size not aligned"
     C.ncclAllGather(
-        sendbuff, 
-        recvbuff, 
+        sendbuff.value, 
+        recvbuff.value, 
         sendcount, 
         datatype, 
         comm.ptr, 
@@ -314,13 +322,13 @@ def reduceScatter(
     assert src.dtype == dst.dtype, "send and recv buffers must be the same time"
     assert src.place.is_gpu_place() and dst.place.is_gpu_place(), "Tensors must be on GPU"
 
-    sendbuff = src._ptr()
-    recvbuff = dst._ptr()
-    recvcount = dst.numel()
+    sendbuff = tensor_to_c_ptr(src)
+    recvbuff = tensor_to_c_ptr(dst)
+    recvcount = dst.numel().item()
     datatype = dtype2nccl(src.dtype)
     operator = op2nccl(op)
 
-    assert src.numel() % recvcount == 0, "Buffer size not aligned"
+    assert src.numel().item() % recvcount == 0, "Buffer size not aligned"
     C.ncclReduceScatter(
         sendbuff,
         recvbuff,

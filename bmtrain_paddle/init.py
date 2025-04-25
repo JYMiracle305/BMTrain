@@ -10,23 +10,70 @@ import paddle.distributed.fleet as fleet
 
 from . import nccl
 from .synchronize import synchronize
+import fcntl
+import time
+
+import shutil
+import random
 
 class FileStore:
-    """基于文件系统的简易store实现"""
     def __init__(self, prefix="bmtrain_store"):
-        self.base_path = f"/tmp/{prefix}_{os.getenv('MASTER_ADDR')}_{os.getenv('MASTER_PORT')}"
-        os.makedirs(self.base_path, exist_ok=True)
+        # 唯一路径隔离不同训练任务
+        self.base_path = f"./tmp/{prefix}_{os.getenv('MASTER_ADDR')}_{os.getenv('MASTER_PORT')}"
+
+        # if dist.get_rank() == 0:
+        #     self._cleanup_old_directory()
+
+        # 清理旧目录并创建新目录
+        if not os.path.exists(self.base_path):
+            os.makedirs(self.base_path)
+        print(f"FileStore path: {self.base_path}")
+
+    # def _cleanup_old_directory(self):
+    #     """主进程删除旧目录"""
+    #     if os.path.exists(self.base_path):
+    #         shutil.rmtree(self.base_path)
+    #         print(f"Rank 0 cleaned up old directory: {self.base_path}")
 
     def set(self, key: str, value: str):
-        with open(os.path.join(self.base_path, key), "w") as f:
-            f.write(value)
-
-    def get(self, key: str) -> str:
+        """原子写入键值对，避免读写冲突"""
         file_path = os.path.join(self.base_path, key)
-        while not os.path.exists(file_path):
-            pass  # 等待主进程创建文件
-        with open(file_path, "r") as f:
-            return f.read()
+        tmp_path = f"{file_path}.tmp"
+        
+        # 写入临时文件后原子重命名
+        with open(tmp_path, "w") as f:
+            fcntl.flock(f, fcntl.LOCK_EX)  # 排他锁
+            print("FileStore set", tmp_path, value)
+            f.write(value)
+            f.flush()
+            os.fsync(f.fileno())  # 强制刷盘
+            fcntl.flock(f, fcntl.LOCK_UN)
+        
+        os.rename(tmp_path, file_path)  # Unix 原子操作
+
+    def get(self, key: str, retries=30, interval=0.1) -> str:
+        """安全读取键值，支持重试避免竞争"""
+        file_path = os.path.join(self.base_path, key)
+        print("FileStore get", file_path)
+        for _ in range(retries):
+            if os.path.exists(file_path):
+                try:
+                    with open(file_path, "r") as f:
+                        fcntl.flock(f, fcntl.LOCK_SH)  # 共享锁
+                        content = f.read()
+                        print("FileStore get", file_path, content)
+                        fcntl.flock(f, fcntl.LOCK_UN)
+                        return content
+                except FileNotFoundError:
+                    pass  # 文件在检查后可能被删除
+            time.sleep(interval)
+        raise TimeoutError(f"Key {key} not found after {retries * interval}s")
+
+    def delete(self, key: str):
+        """删除键值"""
+        file_path = os.path.join(self.base_path, key)
+        if os.path.exists(file_path):
+            os.remove(file_path)
 
 def init_distributed(
     init_method: str = "env://",
@@ -104,6 +151,8 @@ def init_distributed(
         "save_param_to_cpu": True,
     })
 
+    if os.path.exists("./tmp"):
+        shutil.rmtree("./tmp")
     # 自定义store初始化
     store = FileStore()
 
@@ -146,10 +195,14 @@ def init_distributed(
         unique_id: bytes = nccl.getUniqueId().hex()
         # TODO 进程间通信：设置一个唯一的id，一个进程设置，其他进程可以获取到nccl
         store.set("BMTRAIN_UNIQUE_ID", unique_id)
+        print(f"rank {rank} unique_id {unique_id}")
     else:
         unique_id = store.get("BMTRAIN_UNIQUE_ID")
+        print(f"rank {rank} unique_id {unique_id}")
 
+    print("-------bytes.fromhex(unique_id):", bytes.fromhex(unique_id))
     config["comm"] = nccl.commInitRank(bytes.fromhex(unique_id), world_size, rank)
+    print(f"rank {rank} config ", config["comm"] )
 
     topo = config["topology"]
 
@@ -160,14 +213,14 @@ def init_distributed(
         if topo.stage_id == 0:
             unique_id = nccl.getUniqueId()
             store.set(f"PIPE_UNIQUE_ID{topo.pipe_idx}", unique_id.hex())
-        unique_id = bytes.fromhex(store.get(f"PIPE_UNIQUE_ID{topo.pipe_idx}").decode())
+        unique_id = bytes.fromhex(store.get(f"PIPE_UNIQUE_ID{topo.pipe_idx}"))
         config["pipe_comm"] = nccl.commInitRank(unique_id, pipe_size, topo.stage_id)
 
         if topo.pp_zero_id == 0:
             unique_id = nccl.getUniqueId()
             store.set(f"PP_ZERO_UNIQUE_ID{topo.pp_zero_idx}", unique_id.hex())
         unique_id = bytes.fromhex(
-            store.get(f"PP_ZERO_UNIQUE_ID{topo.pp_zero_idx}").decode()
+            store.get(f"PP_ZERO_UNIQUE_ID{topo.pp_zero_idx}")
         )
         config["pp_zero_comm"] = nccl.commInitRank(
             unique_id, world_size // config["pipe_size"], topo.pp_zero_id
@@ -177,14 +230,14 @@ def init_distributed(
         if topo.tp_id == 0:
             unique_id = nccl.getUniqueId()
             store.set(f"TP_UNIQUE_ID{topo.tp_idx}", unique_id.hex())
-        unique_id = bytes.fromhex(store.get(f"TP_UNIQUE_ID{topo.tp_idx}").decode())
+        unique_id = bytes.fromhex(store.get(f"TP_UNIQUE_ID{topo.tp_idx}"))
         config["tp_comm"] = nccl.commInitRank(unique_id, tp_size, topo.tp_id)
 
         if topo.tp_zero_id == 0:
             unique_id = nccl.getUniqueId()
             store.set(f"TP_ZERO_UNIQUE_ID{topo.tp_zero_idx}", unique_id.hex())
         unique_id = bytes.fromhex(
-            store.get(f"TP_ZERO_UNIQUE_ID{topo.tp_zero_idx}").decode()
+            store.get(f"TP_ZERO_UNIQUE_ID{topo.tp_zero_idx}")
         )
         config["tp_zero_comm"] = nccl.commInitRank(
             unique_id, world_size // config["tp_size"], topo.tp_zero_id
@@ -195,7 +248,7 @@ def init_distributed(
             unique_id = nccl.getUniqueId()
             store.set(f"PP_TP_ZERO_UNIQUE_ID{topo.pp_tp_zero_idx}", unique_id.hex())
         unique_id = bytes.fromhex(
-            store.get(f"PP_TP_ZERO_UNIQUE_ID{topo.pp_tp_zero_idx}").decode()
+            store.get(f"PP_TP_ZERO_UNIQUE_ID{topo.pp_tp_zero_idx}")
         )
         config["pp_tp_zero_comm"] = nccl.commInitRank(
             unique_id,

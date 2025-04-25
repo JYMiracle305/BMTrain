@@ -47,19 +47,19 @@ def recv_meta(prev_rank, comm):
 class OpBroadcast(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(src, root, comm = None):
+    def forward(ctx, src, root, comm = None):
         if comm is None:
             comm = config["comm"]
-        outputs = paddle.empty_like(src, dtype = src.dtype, device = src.device)
+        ctx.comm = comm
+        outputs = paddle.empty_like(src, dtype = src.dtype)
         if src.place.is_gpu_place():
-            outputs = outputs._to(place=src.place)
+            outputs = outputs.cuda()
         ncclBroadcast(src, outputs, root, comm)
-        return outputs, comm
+        return outputs
 
     @staticmethod
-    def backward(grad_output, *ctx_args):
-        comm, root = ctx_args
-        res = all_reduce(grad_output, "sum", comm)
+    def backward(ctx, grad_output):
+        res = all_reduce(grad_output, "sum", ctx.comm)
         return res, None, None
 
 def broadcast(src, root, comm=None):
@@ -70,27 +70,33 @@ def broadcast(src, root, comm=None):
 class OpAllGather(paddle.autograd.PyLayer):
 
     @staticmethod
-    def forward(input : paddle.Tensor, comm = None):
+    def forward(ctx, input : paddle.Tensor, comm = None):
         if comm is None:
             comm = config["comm"]
         world_size = commCount(comm)
         if not input.is_contiguous():
             input = input.contiguous()
-        if input._offset() != 0 or input.numel() != input.size:
+        print("--------------OpAllGather---------", input.numel(), input.size)
+        if input._offset() != 0 or input.numel().item() != input.size:
             input = input.clone()
-        output = paddle.empty( (world_size,) + input.size(), dtype=input.dtype)
+        output = paddle.empty(
+            shape=(world_size,) + tuple(input.shape),
+            dtype=input.dtype
+        )
         if input.place.is_gpu_place():
-            output = output._to(place=input.place)
+            output = output.cuda()
+        ctx.comm = comm
         ncclAllGather(
-            input._ptr(),
-            output._ptr(),
+            input,
+            output,
             comm
         )
-        return output, comm
+
+        return output
 
     @staticmethod
-    def backward(grad_output, comm):
-        return grad_output[commRank(comm)], None
+    def backward(ctx, grad_output):
+        return grad_output[commRank(ctx.comm)], None
 
 def all_gather(x : paddle.Tensor, comm = None):
     """Gathers the input tensor from all processes.
@@ -104,7 +110,7 @@ def all_gather(x : paddle.Tensor, comm = None):
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
     
-    assert isinstance(x.place, paddle.CUDAPlace)
+    assert x.place.is_gpu_place()
     return OpAllGather.apply(x, comm)
 
 class OpReduceScatter(paddle.autograd.PyLayer):
@@ -118,12 +124,12 @@ class OpReduceScatter(paddle.autograd.PyLayer):
         assert input.shape[0] % commCount(comm) == 0, "The dimension 0 must be divisible by the number of communication processes"
         if not input.is_contiguous():
             input = input.contiguous()
-        if input._offset() != 0 or input.numel() != input.size:
+        if input._offset() != 0 or input.numel().item() != input.size:
             input = input.clone()
         output_shape = (input.shape[0] // commCount(comm), *input.shape[1:])
         output = paddle.empty(output_shape, dtype=input.dtype)
         if input.place.is_gpu_place():
-            output = output._to(place=input.place)
+            output = output.cuda()
         ncclReduceScatter(
             input._ptr(),
             output._ptr(),
@@ -170,7 +176,7 @@ def reduce_scatter(x : paddle.Tensor, op : str = "sum", comm = None):
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
 
-    assert isinstance(x.place, paddle.CUDAPlace)
+    assert x.place.is_gpu_place()
     return OpReduceScatter.apply(x, op, comm)
 
 class OpAllReduce(paddle.autograd.PyLayer):
@@ -181,20 +187,20 @@ class OpAllReduce(paddle.autograd.PyLayer):
         ctx.comm = comm
         if not input.is_contiguous():
             input = input.contiguous()
-        if input._offset() != 0 or input.numel() != input.size:
+        if input._offset() != 0 or input.numel().item() != input.size:
             input = input.clone()
-        output = paddle.empty( input.numel(), dtype=input.dtype)
+        output = paddle.empty(input.numel(), dtype=input.dtype)
         if input.place.is_gpu_place():
-            output = output.cuda()
+            outputs = outputs.cuda()
 
         print("!!!!!!!!!!!!!!!!!nccl all reduce--------------")
 
-        # ncclAllReduce(
-        #     input,
-        #     output,
-        #     op,
-        #     comm
-        # )
+        ncclAllReduce(
+            input,
+            output,
+            op,
+            comm
+        )
         ctx.op = op
         
         if op in ["sum", "avg"]:

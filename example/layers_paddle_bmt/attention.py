@@ -52,11 +52,15 @@ class Attention(bmt.DistributedModule):
         # Ensure hidden_q and hidden_kv share the same memory (if needed)
         assert hidden_q.data_ptr() == hidden_kv.data_ptr()
 
+        print("-------self.project_q.weight, self.project_k.weight, self.project_v.weight",
+            self.project_q.weight.shape, self.project_k.weight.shape, self.project_v.weight.shape)
+        print("-------self.project_q.bias, self.project_k.bias, self.project_v.bias",
+              self.project_q.bias.shape, self.project_k.bias.shape, self.project_v.bias.shape)
         if config['tp_size'] > 1:
             hidden_q = bmt.nn.OpParallelLinear.apply(
                 hidden_q,
-                paddle.cat([self.project_q.weight, self.project_k.weight, self.project_v.weight], dim=0),
-                paddle.cat([self.project_q.bias, self.project_k.bias, self.project_v.bias], dim=0),
+                paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=0),
+                paddle.concat([self.project_q.bias, self.project_k.bias, self.project_v.bias], axis=0),
                 True, False,
                 False, None
             )
