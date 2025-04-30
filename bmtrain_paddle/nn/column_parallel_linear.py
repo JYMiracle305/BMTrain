@@ -47,7 +47,14 @@ class ColumnParallelLinear(bmt.DistributedModule):
         #     tp_split_dim=0,
         #     tp_mode=True,
         # )
-        self.weight = paddle.create_parameter(shape=[in_features, self.out_features_per_partition], dtype=dtype,
+
+        #TODO
+        world_size = config['world_size']
+        print("ColumnParallelLinear weight size", in_features, self.out_features_per_partition,
+              in_features // world_size, self.out_features_per_partition // world_size)
+        
+        self.weight = paddle.create_parameter(shape=[in_features, self.out_features_per_partition],
+            dtype=dtype,
             default_initializer=paddle.nn.initializer.XavierNormal())
         if bias:
             # self.bias = bmt.DistributedParameter(
@@ -66,6 +73,7 @@ class ColumnParallelLinear(bmt.DistributedModule):
             self.bias = None
 
     def forward(self, input):
+        print("--------------------------ColumnParallelLinear forward--------------------------")
         gather_input = self.gather_input
         split_input = False
         reduce_output_type = None

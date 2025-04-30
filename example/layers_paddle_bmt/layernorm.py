@@ -3,6 +3,7 @@ import paddle
 import paddle.nn as nn
 import paddle.nn.functional as F
 import bmtrain_paddle as bmt
+from bmtrain_paddle.global_var import config
 
 class Layernorm(bmt.DistributedModule):
     __constants__ = ['normalized_shape', 'eps', 'elementwise_affine']
@@ -19,6 +20,7 @@ class Layernorm(bmt.DistributedModule):
         self.normalized_shape = tuple(normalized_shape)  # type: ignore[arg-type]
         self.eps = eps
         self.elementwise_affine = elementwise_affine
+        world_size = config["world_size"] 
         if self.elementwise_affine:
             # self.weight = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
             # print("--------------------self.weight----------------", self.weight.shape)

@@ -46,6 +46,7 @@ class Attention(bmt.DistributedModule):
         assert hidden_q.data_ptr() == hidden_kv.data_ptr()
 
         if config['tp_size'] > 1:
+            print(f"!!!!!!!!!!!!!!!!!!!!!!!!!!!!!! hidden_q shape {hidden_q.shape}")
             hidden_q = bmt.nn.OpParallelLinear.apply(
                 hidden_q,
                 torch.cat([self.project_q.weight, self.project_k.weight, self.project_v.weight], dim=0),
@@ -53,6 +54,7 @@ class Attention(bmt.DistributedModule):
                 True, False,
                 False, None
             )
+            print(f"&&&&&&&&&&&&&&&&&&&&&&&&&&&&&&& hidden_q shape {hidden_q.shape}")
             hidden_q = hidden_q.view(batch_size, -1, hidden_q.shape[-1])
             h_q, h_k, h_v = hidden_q.chunk(3, dim=-1)
         else:
@@ -60,6 +62,7 @@ class Attention(bmt.DistributedModule):
             h_k : torch.Tensor = self.project_k(hidden_kv)
             h_v : torch.Tensor = self.project_v(hidden_kv)
 
+        print(f"&&&&&&&&&&&&&&&attention , {h_q.size()}, {h_k.size()}, {h_v.size()}" )
         seq_q = h_q.size()[1]
         seq_kv = h_k.size(1)
 
@@ -98,16 +101,21 @@ class Attention(bmt.DistributedModule):
         )
 
         score = score.view(-1, seq_q, seq_kv)
-
+        print(f"##############before self.project_out {score.size()} {h_v.size()}")
         h_out = torch.bmm(
             score, h_v
         )
+        print(f"before self.project_out {h_out.size()}")
         h_out = h_out.view(batch_size, -1, seq_q, self.dim_head)
+        print(f"before self.project_out {h_out.size()}")
         h_out = h_out.permute(0, 2, 1, 3).contiguous()
+        print(f"before self.project_out {h_out.size()}")
         h_out = h_out.view(batch_size, seq_q, -1)
+        print(f"@@@@@@@@@@@@@@before self.project_out {h_out.size()}")
         if config['tp_size'] > 1:
             h_out = h_out.view(h_out.shape[0] * bmt.config["tp_size"], -1, h_out.shape[-1]) 
 
+        print(f"!!!!!!!!!!!!!!before self.project_out {h_out.size()}")
         attn_out = self.project_out(h_out)
 
         return attn_out

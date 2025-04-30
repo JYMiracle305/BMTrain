@@ -57,20 +57,29 @@ class Attention(bmt.DistributedModule):
         print("-------self.project_q.bias, self.project_k.bias, self.project_v.bias",
               self.project_q.bias.shape, self.project_k.bias.shape, self.project_v.bias.shape)
         if config['tp_size'] > 1:
+            print("!!!!!!!!!!!!!!!!!!!!!!!!hidden_q shape", hidden_q.shape, hidden_q,
+                  paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=-1).shape)
+            print("!!!!!!!!!!!!!!!11111111111  hidden_q weight", self.project_q.weight,
+                  self.project_k.weight, self.project_v.weight)
+            print("!!!!!!!!!!!!!!!2222222222  hidden_q weight", self.project_q.bias,
+                  self.project_k.bias, self.project_v.bias)
             hidden_q = bmt.nn.OpParallelLinear.apply(
                 hidden_q,
-                paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=0),
-                paddle.concat([self.project_q.bias, self.project_k.bias, self.project_v.bias], axis=0),
+                paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=-1),
+                paddle.concat([self.project_q.bias, self.project_k.bias, self.project_v.bias], axis=-1),
                 True, False,
                 False, None
             )
-            hidden_q = hidden_q.view(batch_size, -1, hidden_q.shape[-1])
-            h_q, h_k, h_v = hidden_q.chunk(3, dim=-1)
+            print("@@@@@@@@@@@@@@@@@@@@@@@@hidden_q shape", hidden_q.shape, hidden_q)
+            hidden_q = hidden_q.reshape([batch_size, -1, hidden_q.shape[-1]])
+            h_q, h_k, h_v = hidden_q.chunk(3, axis=-1)
         else:
             h_q : paddle.Tensor = self.project_q(hidden_q)
             h_k : paddle.Tensor = self.project_k(hidden_kv)
             h_v : paddle.Tensor = self.project_v(hidden_kv)
 
+        print("&&&&&&&&&&&&&&&  attention ", h_q.shape, h_k.shape, h_v.shape )
+        print("&&&&&&&&&&&&&&&  attention h_q, h_k, h_v ", h_q, h_k, h_v )
         seq_q = h_q.shape[1]
         seq_kv = h_k.shape[1]
 
@@ -110,16 +119,20 @@ class Attention(bmt.DistributedModule):
 
         # Flatten batch and head dimensions again
         score = score.reshape([-1, seq_q, seq_kv])
-
+        print("!!!!!!!!!!paddle.bmm(score, h_v)", score.shape, h_v.shape, score, h_v)
         # Compute attention output
         h_out = paddle.bmm(score, h_v)  # (batch_size * num_heads, seq_q, dim_head)
-        h_out = h_out.reshape([batch_size, -1, seq_q, self.dim_head])
-        h_out = h_out.transpose([0, 2, 1, 3])  # (batch_size, seq_q, num_heads, dim_head)
-        h_out = h_out.reshape([batch_size, seq_q, -1])
 
+        print("!!!!!!!!!!!!!!!! 1 self.project_out", h_out)
+        h_out = h_out.reshape([batch_size, -1, seq_q, self.dim_head])
+        # print("!!!!!!!!!!!!!!!! 2 self.project_out", h_out)
+        h_out = h_out.transpose([0, 2, 1, 3])  # (batch_size, seq_q, num_heads, dim_head)
+        # print("!!!!!!!!!!!!!!!! 3 self.project_out", h_out)
+        h_out = h_out.reshape([batch_size, seq_q, -1])
+        # print("!!!!!!!!!!!!!!!! 4 before self.project_out", h_out)
         if config['tp_size'] > 1:
             h_out = h_out.reshape([batch_size * config['tp_size'], -1, h_out.shape[-1]])
-
+        # print("!!!!!!!!!!!!!!!! 5 before self.project_out", h_out)
         attn_out = self.project_out(h_out)
-
+        # print("!!!!!!!!!!!!!!!! 6 after self.project_out", attn_out)
         return attn_out

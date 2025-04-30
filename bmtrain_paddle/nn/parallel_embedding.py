@@ -44,17 +44,24 @@ class VPEmbedding(bmt.DistributedModule):
         #     tp_split_dim=0,
         #     tp_mode=True,
         # )
-        self.weight = paddle.create_parameter(shape=[self.vocab_size_per_partition, embedding_size], dtype=dtype,
+        print("-------------------------embedding_size, self.vocab_size_per_partition",
+              embedding_size, self.vocab_size_per_partition)
+        self.weight = paddle.create_parameter(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype,
             default_initializer=paddle.nn.initializer.XavierNormal())
 
     def forward(self, x: paddle.Tensor, projection=False):
         if not projection:
-            weight = all_gather(self.weight, comm=config["tp_comm"]).flatten(0, 1)
+            print("before weight = all_gather", self.weight.shape)
+            weight = all_gather(self.weight, comm=config["tp_comm"]).transpose([0, 2, 1])
+            print("after weight = all_gather", weight.shape)
+            weight = weight.flatten(0, 1)
+            print("VPEmbedding x, weight", x.shape, weight.shape)  #(2, 256) （10240, 25600）
             out = F.embedding(x, weight)
+            print("VPEmbedding", out.shape)
             return out
         else:
-            x = bmt.distributed.all_gather(x, comm=bmt.config["tp_comm"]).view(
-                x.shape[0], -1, x.shape[-1]
+            x = bmt.distributed.all_gather(x, comm=bmt.config["tp_comm"]).reshape(
+                [x.shape[0], -1, x.shape[-1]]
             )
             return bmt.nn.OpParallelLinear.apply(
                 x, self.weight, None, False, False, False, None, 1

@@ -191,7 +191,7 @@ class OpAllReduce(paddle.autograd.PyLayer):
             input = input.clone()
         output = paddle.empty(input.numel(), dtype=input.dtype)
         if input.place.is_gpu_place():
-            outputs = outputs.cuda()
+            output = output.cuda()
 
         print("!!!!!!!!!!!!!!!!!nccl all reduce--------------")
 
@@ -222,7 +222,7 @@ class OpAllReduce(paddle.autograd.PyLayer):
             grad_output = grad_output * mask.astype(grad_output.dtype)
             return grad_output, None, None
         else:
-            return grad_output * ctx.saved_tensors[0], None, None
+            return grad_output * ctx.saved_tensor()[0], None, None
 
 def all_reduce(x : paddle.Tensor, op : str = "sum", comm = None):
     """Reduces the input tensor from all processes.
@@ -237,8 +237,5 @@ def all_reduce(x : paddle.Tensor, op : str = "sum", comm = None):
     """
     if not config["initialized"]:
         raise RuntimeError("BMTrain is not initialized")
-    str(x.place) == "Place(gpu:0)"
-    return OpAllReduce.apply(x, op, comm)
-
-
-            
+    assert x.place.is_gpu_place()
+    return OpAllReduce.apply(x, op, comm)            

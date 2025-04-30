@@ -119,6 +119,7 @@ class Attention(nn.Layer):
 
         # Compute attention output
         h_out = paddle.bmm(score, h_v)  # (batch_size * num_heads, seq_q, dim_head)
+
         h_out = h_out.reshape([batch_size, -1, seq_q, self.dim_head])
         h_out = h_out.transpose([0, 2, 1, 3])  # (batch_size, seq_q, num_heads, dim_head)
         h_out = h_out.reshape([batch_size, seq_q, -1])

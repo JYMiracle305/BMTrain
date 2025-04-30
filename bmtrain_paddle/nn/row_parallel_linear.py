@@ -66,6 +66,7 @@ class RowParallelLinear(bmt.DistributedModule):
             self.register_parameter("bias", None)
 
     def forward(self, input):
+        print("---------------RowParallelLinear------------------")
         gather_input = self.split_input
         gather_output = False
         reduce_output_type = (

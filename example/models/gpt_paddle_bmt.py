@@ -39,10 +39,19 @@ class GPT_paddle_bmt(bmt.DistributedModule):
                 for _ in range(num_layers)
             ])
         else:
-            self.transformers = paddle.nn.LayerList([
-                TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
-                for _ in range(num_layers)
-            ])
+            # self.transformers = bmt.TransformerBlockList([
+            #     bmt.Block(
+            #         TransformerEncoder(
+            #             dim_model, dim_head, num_heads, dim_ff, bias, dtype
+            #         )
+            #     )
+            #     for _ in range(num_layers)
+            # ])
+            # self.transformers = paddle.nn.LayerList([
+            #     TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
+            #     for _ in range(num_layers)
+            # ])
+            self.transformers = TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
 
         # LayerNorm
         self.layernorm = Layernorm(dim_model, dtype=dtype)
@@ -62,22 +71,23 @@ class GPT_paddle_bmt(bmt.DistributedModule):
             input = paddle.split(input, num_or_sections=config["tp_size"], axis=1)[config["tp_rank"]]
             pos = paddle.split(pos, num_or_sections=config["tp_size"], axis=1)[config["tp_rank"]]
 
-        # print("before  out = self.pos_emb(pos) + self.word_emb(input)")
-        # print("input", input.shape)
+        print("before  out = self.pos_emb(pos) + self.word_emb(input)")
+        print("input", input.shape, input)
         # 嵌入层
         out = self.pos_emb(pos) + self.word_emb(input)
-        # print("After adding position and word embeddings shape:", out.shape)
+        print("After adding position and word embeddings shape:", out.shape, out)
 
-        # out = self.transformers(out, mask_2d, None)
-        for i, layer in enumerate(self.transformers):
-            out = layer(out, mask_2d, None)
-            # print(f"After Transformer layer {i} shape:", out.shape)
-        # print(f"After Transformer layer shape:", out.shape)
+        out = self.transformers(out, mask_2d, None)
+        # for i, layer in enumerate(self.transformers):
+        #     out = layer(out, mask_2d, None)
+        #     print(f"After Transformer layer {i} shape:", out.shape)
+        print(f"After Transformer layer:", out.shape, out)
 
         out = self.layernorm(out)
-        # print("After LayerNorm shape:", out.shape)
+        print("After LayerNorm shape:", out.shape, out)
 
         # # 词嵌入投影
         logits = self.word_emb(out, projection=True)
 
+        print("After word_emb", logits.shape, logits)
         return logits

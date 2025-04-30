@@ -11,11 +11,11 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x : paddle.Tensor, target : paddle.Tensor, ignore_index: int):
         assert x.ndim == 2
-        softmax = paddle.empty(x.size(), device=x.device, dtype=x.dtype)
-        out = paddle.empty(x.size(0), device=x.device, dtype='float')
+        softmax = paddle.empty(x.shape, device=x.device, dtype=x.dtype)
+        out = paddle.empty(x.shape[0], device=x.device, dtype='float')
         
         F.cross_entropy_forward(
-            x.size(0), x.size(1),
+            x.shape[0], x.shape[1],
             x, target,
             softmax, out,
             ignore_index,
@@ -27,9 +27,9 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
         grad_output = grad_output.contiguous()
-        softmax, target = ctx.saved_tensors
+        softmax, target = ctx.saved_tensor()
         F.cross_entropy_backward_inplace(
-            softmax.size(0), softmax.size(1),
+            softmax.shape[0], softmax.shape[1],
             grad_output, target,
             softmax,
             ctx.ignore_index,
@@ -42,11 +42,12 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
         comm = config['tp_comm']
         rank = config['tp_rank']
         world_size = config['tp_size']
-
-        max_logits = paddle.max(logits, dim=-1)[0].float()
+        print(f"-----------------------VPFusedCrossEntropy {logits.shape} {paddle.max(logits, axis=-1)}")
+        max_logits = paddle.max(logits, axis=-1).astype(paddle.float32)
+        print(f"-----------------------VPFusedCrossEntropy {max_logits} {max_logits.shape}")
         max_logits = all_reduce(max_logits, op="max", comm=comm)
 
-        partition_vocab_size = logits.size()[-1]
+        partition_vocab_size = logits.shape[-1]
         vocab_start_index = rank * partition_vocab_size
         vocab_end_index = (rank + 1) * partition_vocab_size
 
@@ -55,19 +56,23 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
         masked_target = target.clone() - vocab_start_index
         masked_target[target_mask] = 0
 
-        logits_2d = logits.view(-1, partition_vocab_size)
-        masked_target_1d = masked_target.view(-1)
-        arange_1d = paddle.arange(start=0, end=logits_2d.size()[0], device=logits_2d.device)
+        logits_2d = logits.reshape([-1, partition_vocab_size])
+        masked_target_1d = masked_target.reshape([-1])
+        arange_1d = paddle.arange(start=0, end=logits_2d.shape[0])
+        if logits_2d.place.is_gpu_place():
+            arange_1d = arange_1d.cuda()
         predicted_logits_1d = logits_2d[arange_1d, masked_target_1d].contiguous() # (-1,)
         predicted_logits = predicted_logits_1d.view_as(target)
         predicted_logits[target_mask] = 0.0 # if target=-100, it will also be 0
 
         # All reduce is needed to get the chunks from other GPUs.
-        predicted_logits = all_reduce(predicted_logits.float(), op="sum", comm=comm)
+        predicted_logits = all_reduce(predicted_logits.astype('float32'), op="sum", comm=comm)
         predicted_logits = predicted_logits - max_logits
         # Sum of exponential of logits along vocab dimension across all GPUs.
 
-        sum_exp_logits = paddle.empty(logits.size(0), device=logits.device, dtype='float')
+        sum_exp_logits = paddle.empty([logits.shape[0]], dtype=paddle.float32)
+        if logits.place.is_gpu_place():
+            sum_exp_logits = sum_exp_logits.cuda()
         sum_exp_logits = F.fused_sumexp(logits, max_logits) # float
         sum_exp_logits = all_reduce(sum_exp_logits, op="sum", comm=comm) + 1e-10 # avoid nan
 
@@ -78,31 +83,43 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
         # torch.exp(logits, out=exp_logits)
         # sum_exp_logits = exp_logits.sum(dim=-1)
         # exp_logits.div_(sum_exp_logits.unsqueeze(dim=-1))
-
-        loss = paddle.log(sum_exp_logits.view(predicted_logits.shape)) - predicted_logits
+        loss = paddle.log(sum_exp_logits.reshape(predicted_logits.shape)) - predicted_logits
 
         # Normalize
         ctx.save_for_backward(softmax, target_mask, masked_target_1d)
-
+        print("ctx.save_for_backward OK!!!!!!!!!!!!!")
         return loss
 
     @staticmethod
     def backward(ctx, grad_output):
+        print("VPFusedCrossEntropy backword start !!!!!!!!!!!!!")
         # Retreive tensors from the forward path.
-        softmax, target_mask, masked_target_1d =ctx.saved_tensors
+        softmax, target_mask, masked_target_1d = ctx.saved_tensor()
         # All the inputs have softmax as thier gradient.
         grad_input = softmax
         # For simplicity, work with the 2D gradient.
-        partition_vocab_size = softmax.size()[-1]
-        grad_2d = grad_input.view(-1, partition_vocab_size)
+        partition_vocab_size = softmax.shape[-1]
+        grad_2d = grad_input.reshape([-1, partition_vocab_size])
 
         # Add the gradient from matching classes.
-        arange_1d = paddle.arange(start=0, end=grad_2d.size()[0], device=grad_2d.device)
-
-        softmax_update = 1.0 - target_mask.view(-1).float()
+        arange_1d = paddle.arange(start=0, end=grad_2d.shape[0])
+        if grad_2d.place.is_gpu_place():
+            arange_1d = arange_1d.cuda()
+        softmax_update = 1.0 - target_mask.reshape([-1]).astype('float32')
 
         grad_2d[arange_1d, masked_target_1d] -= softmax_update
-        grad_input.mul_(grad_output.view(*grad_input.shape[:-1]).unsqueeze(dim=-1))
+        print("---------VPFusedCrossEntropy backword-----------",
+              grad_input.dtype, grad_output.dtype)
+        print("---------VPFusedCrossEntropy backword-----------",
+              grad_input, grad_output)
+        grad_output_casted = grad_output.astype(grad_input.dtype)
+        print("---------VPFusedCrossEntropy backword-----------",
+              grad_input.dtype, grad_output_casted.dtype)
+        grad_input.set_value(
+            paddle.multiply(
+                grad_input, (grad_output_casted.reshape([*grad_input.shape[:-1]]).unsqueeze(axis=-1))
+            )
+        )
 
         return grad_input, None
 
@@ -230,26 +247,27 @@ class FusedCrossEntropy(paddle.nn.Layer):
 
     def forward(self, input: paddle.Tensor, target: paddle.Tensor) -> paddle.Tensor:
         if self.parallel:
-            ret = VPFusedCrossEntropy.apply(input, target.long())
+            print("-----------------------FusedCrossEntropy input", input)
+            ret = VPFusedCrossEntropy.apply(input, target.astype(paddle.int64))
         else:
             if input.dtype == paddle.float32:
                 return paddle.nn.functional.cross_entropy(
                         input, 
-                        target.astype('int64'),
+                        target.astype(paddle.int64),
                         weight=self.weight, 
                         ignore_index=self.ignore_index, 
                         reduction=self.reduction,
                         label_smoothing=self.label_smoothing)
 
-            ret = OpFusedCrossEntropy.apply(input, target.int(), self.ignore_index) # return float tensor
+            ret = OpFusedCrossEntropy.apply(input, target.astype(paddle.int64), self.ignore_index) # return float tensor
 
         if self.weight is not None:
-            if self.weight.dim() != 1 or self.weight.size(0) != input.size(1):
+            if self.weight.dim() != 1 or self.weight.shape[0] != input.shape[1]:
                 raise ValueError("weight should be a 1D tensor of size C")
-            w = self.weight[paddle.where(target==self.ignore_index, 0, target)].float()
+            w = self.weight[paddle.where(target==self.ignore_index, 0, target)].astype('float32')
             w[target==self.ignore_index] = 0
         else:
-            w = (target != self.ignore_index).int()
+            w = (target != self.ignore_index).astype(paddle.int64)
 
         ret = w * ret
         
@@ -258,4 +276,4 @@ class FusedCrossEntropy(paddle.nn.Layer):
         elif self.reduction == "sum":
             return ret.sum()
         elif self.reduction == "mean":
-            return ret.sum() / w.sum().float()
+            return ret.sum() / w.sum().astype('float32')

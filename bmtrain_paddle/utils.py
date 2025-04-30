@@ -156,31 +156,16 @@ def tp_split_tensor(tensor, split_dim):
 _tensor_refs = WeakKeyDictionary()
 
 def tensor_to_c_ptr(tensor: paddle.Tensor):
-    """
-    将 PaddlePaddle Tensor 转换为 C 指针及元信息（适用于 CPU/GPU Tensor）。
-
-    Args:
-        tensor (paddle.Tensor): 输入的 Paddle Tensor，支持任意形状和设备。
-
-    Returns:
-        Tuple:
-            - c_ptr (ctypes.POINTER): 数据指针（void* 类型，需根据 dtype 转换为具体类型）。
-            - shape (Tuple[int]): 张量形状。
-            - meta (Dict): 包含 dtype（str）和 numel（int）的元信息。
-
-    Raises:
-        TypeError: 输入非 Tensor 时抛出异常。
-    """
-    if not isinstance(tensor, paddle.Tensor):
-        raise TypeError("输入必须为 paddle.Tensor 类型")
-
-    # 确保内存连续
+    if not tensor.place.is_gpu_place():
+        tensor = tensor.cuda()
     tensor = tensor.contiguous()
-
-    cupy_array = cupy.asarray(tensor)
-    _tensor_refs[tensor] = cupy_array
-
-    return ctypes.c_void_p(cupy_array.data.ptr)
+    
+    # 通过 DLPack 获取 CuPy 数组（共享内存）
+    dlpack = tensor.value().get_tensor()._to_dlpack()
+    cp_array = cupy.fromDlpack(dlpack)
+    
+    # 返回指针、形状、数据类型
+    return cp_array.data.ptr
 
 class AverageRecorder:
     """A utility class to record the average value of a quantity over time.

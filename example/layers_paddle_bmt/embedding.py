@@ -85,6 +85,7 @@ class Embedding(bmt.DistributedModule):
             out = F.embedding(
                 input, self.weight, self.padding_idx, self.sparse
             )
+            print("!!!!!!!!!!!!!!!Embedding", out.shape)
             return out
         else:
             #需要确保 input 的最后一个维度与 self.weight 的第一个维度一致

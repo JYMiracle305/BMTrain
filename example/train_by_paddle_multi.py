@@ -94,7 +94,7 @@ def main():
                 pos,
                 pos < enc_length[:, None]
             )
-            print("Logits 形状:", logits.shape)
+            print("Logits 形状:", logits.shape, logits)
             batch, seq_len, vocab_out_size = logits.shape
 
             print(f"Iter {iteration} 当前学习率: {optimizer.get_lr()}")
@@ -104,8 +104,8 @@ def main():
             else:
                 loss = loss_func(logits.astype(paddle.float32).reshape([batch * seq_len, vocab_out_size]), targets.reshape([batch * seq_len]))
 
-            print(f"Loss 值: {loss.item()}")
-            global_loss = bmt.sum_loss(loss).item()
+            print(f"Loss 值: {loss.item()} {loss}")
+            # global_loss = bmt.sum_loss(loss).item()
             loss.backward()    #optim_manager.backward(loss)
 
             # 添加梯度检查代码

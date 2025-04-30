@@ -47,6 +47,7 @@ class ColumnParallelLinear(bmt.DistributedModule):
             tp_split_dim=0,
             tp_mode=True,
         )
+        print("------------------ColumnParallelLinear weight shape", self.weight.size())
         if bias:
             self.bias = bmt.DistributedParameter(
                 torch.empty(
@@ -56,6 +57,7 @@ class ColumnParallelLinear(bmt.DistributedModule):
                 tp_split_dim=0,
                 tp_mode=True,
             )
+            print("----------------------ColumnParallelLinear biaz shape", self.bias.size())
         else:
             self.register_parameter("bias", None)
 
