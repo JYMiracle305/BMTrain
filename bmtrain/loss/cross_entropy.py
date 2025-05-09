@@ -82,7 +82,6 @@ class VPFusedCrossEntropy(torch.autograd.Function):
 
         # Normalize
         ctx.save_for_backward(softmax, target_mask, masked_target_1d)
-
         return loss
 
     @staticmethod
@@ -101,6 +100,7 @@ class VPFusedCrossEntropy(torch.autograd.Function):
         softmax_update = 1.0 - target_mask.view(-1).float()
 
         grad_2d[arange_1d, masked_target_1d] -= softmax_update
+
         grad_input.mul_(grad_output.view(*grad_input.shape[:-1]).unsqueeze(dim=-1))
 
         return grad_input, None

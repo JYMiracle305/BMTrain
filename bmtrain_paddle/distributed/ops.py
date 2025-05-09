@@ -76,7 +76,7 @@ class OpAllGather(paddle.autograd.PyLayer):
         world_size = commCount(comm)
         if not input.is_contiguous():
             input = input.contiguous()
-        print("--------------OpAllGather---------", input.numel(), input.size)
+        # print("--------------OpAllGather---------", input.numel(), input.size)
         if input._offset() != 0 or input.numel().item() != input.size:
             input = input.clone()
         output = paddle.empty(
@@ -193,7 +193,7 @@ class OpAllReduce(paddle.autograd.PyLayer):
         if input.place.is_gpu_place():
             output = output.cuda()
 
-        print("!!!!!!!!!!!!!!!!!nccl all reduce--------------")
+        # print("!!!!!!!!!!!!!!!!!nccl all reduce--------------")
 
         ncclAllReduce(
             input,

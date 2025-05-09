@@ -8,22 +8,23 @@ from ..global_var import config
 
 def check_overflow(param_groups):
     # check overflow
-    has_inf_or_nan = paddle.zeros(1, dtype='uint8').cuda()
+    has_inf_or_nan = paddle.zeros(1, dtype=paddle.uint8).cuda()
     for group in param_groups:
         for p in group['params']:
             if p.grad is not None:
                 if p.dtype != 'float':
                     has_inf_nan(p.grad, has_inf_or_nan)
     if "comm" in config:
-        nccl.allReduce(has_inf_or_nan.storage(), has_inf_or_nan.storage(), "max", config["comm"])
+        nccl.allReduce(has_inf_or_nan, has_inf_or_nan, "max", config["comm"])
 
+    print(f"check_overflow {has_inf_or_nan.item()}")
     if has_inf_or_nan > 0:
         raise OverflowError("Gradient overflow")
 
 def grad_rescale(param_groups, scale):
     for group in param_groups:
         for p in group['params']:
-            if p.grad is not None and p.requires_grad:
+            if p.grad is not None and not p.stop_gradient:
                 p.grad /= scale
 
 class OptimManager:
@@ -88,8 +89,8 @@ class OptimManager:
         self.lr_schedulers.append(lr_scheduler)
 
     def scale_loss(self, loss : paddle.Tensor) -> paddle.Tensor:
-
-        return loss * ( self.loss_scale / self.grad_scale ) # loss scale
+        res = loss * ( self.loss_scale / self.grad_scale ) # loss scale
+        return res
 
     def backward(self, loss : paddle.Tensor):
         """
@@ -123,12 +124,40 @@ class OptimManager:
         """
         if self.loss_scale_enabled:
             has_overflow = False
-            # for optimizer in self.optimizers:
-            #     try:
-            #         check_overflow(optimizer._param_groups)
-            #     except OverflowError:
-            #         has_overflow = True
-            #         break
+            for optimizer in self.optimizers:
+                # print_rank(f"\n[Debug] Checking optimizer: {type(optimizer).__name__}")
+                # print("[Debug] Type of optimizer._param_groups:", type(optimizer._param_groups))
+                # print("[Debug] Length of optimizer._param_groups:", len(optimizer._param_groups))
+                # for group_idx, param_group in enumerate(optimizer._param_groups):
+                #     # 打印参数组元信息
+                #     print_rank(f"---- Parameter Group {group_idx} {param_group}----")
+                #     print_rank("Group Hyperparameters:")
+                #     for key in param_group:
+                #         if key != "params":
+                #             print_rank(f"  {key}: {param_group[key]}")
+
+                #     # 打印参数详细信息
+                #     print_rank("Parameters in group:")
+                #     for param_idx, param in enumerate(param_group["params"]):
+                #         param_info = [
+                #             f"  Param {param_idx}",
+                #             f"Name: {param.name}" if hasattr(param, 'name') else "",
+                #             f"Shape: {param.shape}",
+                #             f"Dtype: {param.dtype}",
+                #             f"Requires_grad: {not param.stop_gradient}",
+                #             f"Grad: {'Exists' if param.grad is not None else 'None'}"
+                #         ]
+                #         print_rank("\n".join(param_info))
+                        
+                #         # 可选：打印梯度统计信息
+                #         if param.grad is not None:
+                #             grad = param.grad
+                #             print_rank(f"  Grad Statistics: mean={grad.mean().item()}, std={grad.std().item()}, min={grad.min().item()}, max={grad.max().item()}")
+                try:
+                    check_overflow(optimizer._param_groups)
+                except OverflowError:
+                    has_overflow = True
+                    break
             if has_overflow:
                 print_rank("Gradient overflow, change scale from %lf to %lf" % (self.loss_scale, self.loss_scale / self.loss_scale_factor))
                 with paddle.no_grad():

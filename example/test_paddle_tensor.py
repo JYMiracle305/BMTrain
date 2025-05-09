@@ -13,7 +13,6 @@ import torch
 # W = paddle.create_parameter(shape=[784, 200], dtype='float32')
 
 # print(W.type)
-# class DistributedParameter(paddle.Tensor):
 class DistributedParameter(paddle.Tensor):
     r"""
     DistributedParameter is a subclass of paddle.Tensor.

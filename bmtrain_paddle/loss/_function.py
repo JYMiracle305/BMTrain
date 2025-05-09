@@ -8,7 +8,7 @@ CHECK_INPUT = lambda x: x.is_contiguous() and x.place.is_gpu_place()
 
 def has_inf_nan(g_half: paddle.Tensor, out: paddle.Tensor) -> None:
     assert out.dtype == paddle.uint8, "out must be a uint8 tensor"
-    print("g_half.place, out.place :::", g_half.place, out.place)
+    # print("g_half.place, out.place :::", g_half.place, out.place)
     assert CHECK_INPUT(g_half), "g_fp16 must be contiguous and on cuda"
     assert CHECK_INPUT(out), "out must be contiguous and on cuda"
     mid = paddle.zeros(1024, dtype=out.dtype)
@@ -16,6 +16,8 @@ def has_inf_nan(g_half: paddle.Tensor, out: paddle.Tensor) -> None:
         mid = mid.cuda()
     stream = paddle.device.cuda.current_stream().cuda_stream
     if g_half.dtype == paddle.float16:
+        print(f"has_inf_nan 指针 {g_half.numel().item()}, {hex(tensor_to_c_ptr(g_half))}, \
+              {hex(tensor_to_c_ptr(mid))}, {hex(tensor_to_c_ptr(out))}, {stream}")
         C.has_nan_inf_fp16_launcher(
             g_half.numel().item(), tensor_to_c_ptr(g_half), tensor_to_c_ptr(mid), tensor_to_c_ptr(out), stream
         )
@@ -42,6 +44,7 @@ def cross_entropy_forward(
     CHECK_INPUT(target)
     CHECK_INPUT(softmax)
     CHECK_INPUT(output)
+    # print("cross_entropy_forward", target.dtype, output.dtype)
     assert target.dtype == paddle.int32, "target must be an int tensor"
     assert output.dtype == paddle.float32, "output must be a float tensor"
     assert (

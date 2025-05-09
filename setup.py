@@ -89,10 +89,10 @@ class CMakeBuild(build_ext):
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=build_temp)
         
 ext_modules = [
-    CMakeExtension("bmtrain_paddle.C"),
+    CMakeExtension("bmtrain.C"),
 ]
 setup(
-    name='bmtrain_paddle',
+    name='bmtrain',
     version='1.0.0',
     author="Guoyang Zeng",
     author_email="qbjooo@qq.com",

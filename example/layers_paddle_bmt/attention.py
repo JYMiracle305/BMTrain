@@ -52,17 +52,17 @@ class Attention(bmt.DistributedModule):
         # Ensure hidden_q and hidden_kv share the same memory (if needed)
         assert hidden_q.data_ptr() == hidden_kv.data_ptr()
 
-        print("-------self.project_q.weight, self.project_k.weight, self.project_v.weight",
-            self.project_q.weight.shape, self.project_k.weight.shape, self.project_v.weight.shape)
-        print("-------self.project_q.bias, self.project_k.bias, self.project_v.bias",
-              self.project_q.bias.shape, self.project_k.bias.shape, self.project_v.bias.shape)
+        # print("-------self.project_q.weight, self.project_k.weight, self.project_v.weight",
+        #     self.project_q.weight.shape, self.project_k.weight.shape, self.project_v.weight.shape)
+        # print("-------self.project_q.bias, self.project_k.bias, self.project_v.bias",
+        #       self.project_q.bias.shape, self.project_k.bias.shape, self.project_v.bias.shape)
         if config['tp_size'] > 1:
-            print("!!!!!!!!!!!!!!!!!!!!!!!!hidden_q shape", hidden_q.shape, hidden_q,
-                  paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=-1).shape)
-            print("!!!!!!!!!!!!!!!11111111111  hidden_q weight", self.project_q.weight,
-                  self.project_k.weight, self.project_v.weight)
-            print("!!!!!!!!!!!!!!!2222222222  hidden_q weight", self.project_q.bias,
-                  self.project_k.bias, self.project_v.bias)
+            # print("!!!!!!!!!!!!!!!!!!!!!!!!hidden_q shape", hidden_q.shape, hidden_q,
+            #       paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=-1).shape)
+            # print("!!!!!!!!!!!!!!!11111111111  hidden_q weight", self.project_q.weight,
+            #       self.project_k.weight, self.project_v.weight)
+            # print("!!!!!!!!!!!!!!!2222222222  hidden_q weight", self.project_q.bias,
+            #       self.project_k.bias, self.project_v.bias)
             hidden_q = bmt.nn.OpParallelLinear.apply(
                 hidden_q,
                 paddle.concat([self.project_q.weight, self.project_k.weight, self.project_v.weight], axis=-1),
@@ -70,7 +70,7 @@ class Attention(bmt.DistributedModule):
                 True, False,
                 False, None
             )
-            print("@@@@@@@@@@@@@@@@@@@@@@@@hidden_q shape", hidden_q.shape, hidden_q)
+            # print("@@@@@@@@@@@@@@@@@@@@@@@@hidden_q shape", hidden_q.shape, hidden_q)
             hidden_q = hidden_q.reshape([batch_size, -1, hidden_q.shape[-1]])
             h_q, h_k, h_v = hidden_q.chunk(3, axis=-1)
         else:
@@ -78,8 +78,8 @@ class Attention(bmt.DistributedModule):
             h_k : paddle.Tensor = self.project_k(hidden_kv)
             h_v : paddle.Tensor = self.project_v(hidden_kv)
 
-        print("&&&&&&&&&&&&&&&  attention ", h_q.shape, h_k.shape, h_v.shape )
-        print("&&&&&&&&&&&&&&&  attention h_q, h_k, h_v ", h_q, h_k, h_v )
+        # print("&&&&&&&&&&&&&&&  attention ", h_q.shape, h_k.shape, h_v.shape )
+        # print("&&&&&&&&&&&&&&&  attention h_q, h_k, h_v ", h_q, h_k, h_v )
         seq_q = h_q.shape[1]
         seq_kv = h_k.shape[1]
 
@@ -119,11 +119,11 @@ class Attention(bmt.DistributedModule):
 
         # Flatten batch and head dimensions again
         score = score.reshape([-1, seq_q, seq_kv])
-        print("!!!!!!!!!!paddle.bmm(score, h_v)", score.shape, h_v.shape, score, h_v)
+        # print("!!!!!!!!!!paddle.bmm(score, h_v)", score.shape, h_v.shape, score, h_v)
         # Compute attention output
         h_out = paddle.bmm(score, h_v)  # (batch_size * num_heads, seq_q, dim_head)
 
-        print("!!!!!!!!!!!!!!!! 1 self.project_out", h_out)
+        # print("!!!!!!!!!!!!!!!! 1 self.project_out", h_out)
         h_out = h_out.reshape([batch_size, -1, seq_q, self.dim_head])
         # print("!!!!!!!!!!!!!!!! 2 self.project_out", h_out)
         h_out = h_out.transpose([0, 2, 1, 3])  # (batch_size, seq_q, num_heads, dim_head)

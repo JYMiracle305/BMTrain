@@ -50,8 +50,8 @@ class ColumnParallelLinear(bmt.DistributedModule):
 
         #TODO
         world_size = config['world_size']
-        print("ColumnParallelLinear weight size", in_features, self.out_features_per_partition,
-              in_features // world_size, self.out_features_per_partition // world_size)
+        # print("ColumnParallelLinear weight size", in_features, self.out_features_per_partition,
+        #       in_features // world_size, self.out_features_per_partition // world_size)
         
         self.weight = paddle.create_parameter(shape=[in_features, self.out_features_per_partition],
             dtype=dtype,

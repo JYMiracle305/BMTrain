@@ -67,20 +67,15 @@ class FileStore:
 _tensor_refs = WeakKeyDictionary()
 
 def tensor_to_c_ptr(tensor: paddle.Tensor):
-    if not isinstance(tensor, paddle.Tensor):
-        raise TypeError("输入必须为 paddle.Tensor 类型")
-    
-    # 确保张量在 GPU 上且内存连续
     if not tensor.place.is_gpu_place():
-        raise RuntimeError("仅支持 GPU Tensor")
+        tensor = tensor.cuda()
     tensor = tensor.contiguous()
+    
+    # 通过 DLPack 获取 CuPy 数组（共享内存）
+    dlpack = tensor.value().get_tensor()._to_dlpack()
+    cp_array = cupy.fromDlpack(dlpack)
 
-    # 将 Tensor 转换为 CuPy 数组，并维护引用
-    cupy_array = cupy.asarray(tensor)
-    # _tensor_refs[tensor] = cupy_array  # 使用弱引用字典
-
-    # 获取指针并返回元信息
-    return ctypes.c_void_p(cupy_array.data.ptr)
+    return cp_array.data.ptr
 
 def test_allreduce():
     # os.environ["PADDLE_MASTER"] = f"localhost:12345"
@@ -119,10 +114,10 @@ def test_allreduce():
     sendbuff = tensor_to_c_ptr(src)
     recvbuff = tensor_to_c_ptr(dst)
     input_paddle_ptr = tensor_to_c_ptr(input_paddle)
-    print(f"src_ptr: {hex(sendbuff.value)}")  # 应为非零地址（如0x7f8a5c000000）
-    print(f"dst_ptr: {hex(recvbuff.value)}")
+    print(f"src_ptr: {hex(sendbuff)}")  # 应为非零地址（如0x7f8a5c000000）
+    print(f"dst_ptr: {hex(recvbuff)}")
     print(f"dst_ptr: {recvbuff}")
-    print(f"input_paddle_ptr: {hex(input_paddle_ptr.value)}")
+    print(f"input_paddle_ptr: {hex(input_paddle_ptr)}")
     print(f"input_paddle_ptr: {input_paddle_ptr}")
 
     print("src dst", src.place, dst.place)

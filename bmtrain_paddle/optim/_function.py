@@ -1,5 +1,6 @@
 from .. import C
 import paddle
+from ..utils import tensor_to_c_ptr
 
 CHECK_INPUT = lambda x: x.is_contiguous() and x.place.is_gpu_place()
 
@@ -7,7 +8,7 @@ CHECK_INPUT = lambda x: x.is_contiguous() and x.place.is_gpu_place()
 def bf16_from_fp32(param_fp32):
     param_bf16 = paddle.empty_like(param_fp32, dtype=paddle.bfloat16)
     C.to_bf16_from_fp32(
-        param_fp32.numel(), param_fp32.data_ptr(), param_bf16.data_ptr()
+        param_fp32.size, tensor_to_c_ptr(param_fp32), tensor_to_c_ptr(param_bf16)
     )
     return param_bf16
 
@@ -15,7 +16,7 @@ def bf16_from_fp32(param_fp32):
 def fp16_from_fp32(param_fp32):
     param_fp16 = paddle.empty_like(param_fp32, dtype=paddle.float16)
     C.to_fp16_from_fp32(
-        param_fp32.numel(), param_fp32.data_ptr(), param_fp16.data_ptr()
+        param_fp32.size, tensor_to_c_ptr(param_fp32), tensor_to_c_ptr(param_fp16)
     )
     return param_fp16
 
@@ -49,44 +50,55 @@ def adam_cpu(
     ), "g_fp16 must be float16/bfloat16 tensor"
     assert m_fp32.dtype == paddle.float32, "m_fp32 must be float32 tensor"
     assert v_fp32.dtype == paddle.float32, "v_fp32 must be float32 tensor"
-    assert isinstance(param_fp32.place, paddle.CPUPlace), "param_fp32 must be a cpu tensor"
-    assert isinstance(param_fp16.place, paddle.CPUPlace), "param_fp16 must be a cpu tensor"
-    assert isinstance(g_fp16.place, paddle.CPUPlace), "g_fp16 must be a cpu tensor"
-    assert isinstance(m_fp32.place, paddle.CPUPlace), "m_fp32 must be a cpu tensor"
-    assert isinstance(v_fp32.place, paddle.CPUPlace), "v_fp32 must be a cpu tensor"
+    print("adam_cpu", param_fp32.place, param_fp32.place.is_cpu_place)
+    assert param_fp32.place.is_cpu_place, "param_fp32 must be a cpu tensor"
+    assert param_fp16.place.is_cpu_place, "param_fp16 must be a cpu tensor"
+    assert g_fp16.place.is_cpu_place, "g_fp16 must be a cpu tensor"
+    assert m_fp32.place.is_cpu_place, "m_fp32 must be a cpu tensor"
+    assert v_fp32.place.is_cpu_place, "v_fp32 must be a cpu tensor"
     assert (
-        param_fp32.numel() == param_fp16.numel()
+        param_fp32.size == param_fp16.size
     ), "param_fp32 and param_fp16 must have the same number of elements"
     assert (
-        param_fp32.numel() == g_fp16.numel()
+        param_fp32.size == g_fp16.size
     ), "param_fp32 and g_fp16 must have the same number of elements"
     assert (
-        param_fp32.numel() == m_fp32.numel()
+        param_fp32.size == m_fp32.size
     ), "param_fp32 and m_fp32 must have the same number of elements"
     assert (
-        param_fp32.numel() == v_fp32.numel()
+        param_fp32.size == v_fp32.size
     ), "param_fp32 and v_fp32 must have the same number of elements"
     if delta_info is not None:
         assert delta_info.is_contiguous(), "delta_info must be contiguous"
         assert delta_info.dtype == paddle.float32, "delta_info must be float32 tensor"
         assert isinstance(delta_info.place, paddle.CPUPlace), "delta_info must be a cpu tensor"
-        assert delta_info.numel() == 4, "delta_info have a length of 4"
+        assert delta_info.size == 4, "delta_info have a length of 4"
     bias_correction1 = 1 - beta1**step
     bias_correction2 = 1 - beta2**step
     if g_fp16.dtype == paddle.float16:
+        print("g_fp16.dtype == paddle.float16")
         launcher = C.adam_cpu_fp16_launcher
     elif g_fp16.dtype == paddle.bfloat16:
+        print("g_fp16.dtype == paddle.bfloat16")
         if not C.is_bf16_supported():
             raise NotImplementedError(f"bfloat16 is not supported on current GPU")
         launcher = C.adam_cpu_bf16_launcher
+    print("adam_cpu 指针", tensor_to_c_ptr(param_fp32),
+        hex(tensor_to_c_ptr(param_fp32)),
+        hex(tensor_to_c_ptr(param_fp16)),
+        hex(tensor_to_c_ptr(delta_info) if delta_info is not None else 0),
+        hex(tensor_to_c_ptr(g_fp16)),
+        hex(tensor_to_c_ptr(m_fp32)),
+        hex(tensor_to_c_ptr(v_fp32)),
+    )
     launcher(
-        param_fp32.numel(),
-        param_fp32.data_ptr(),
-        param_fp16.data_ptr(),
-        delta_info.data_ptr() if delta_info is not None else 0,
-        g_fp16.data_ptr(),
-        m_fp32.data_ptr(),
-        v_fp32.data_ptr(),
+        tensor_to_c_ptr(param_fp32),
+        tensor_to_c_ptr(param_fp32),
+        tensor_to_c_ptr(param_fp16),
+        tensor_to_c_ptr(delta_info) if delta_info is not None else 0,
+        tensor_to_c_ptr(g_fp16),
+        tensor_to_c_ptr(m_fp32),
+        tensor_to_c_ptr(v_fp32),
         beta1,
         beta2,
         eps,
@@ -123,28 +135,27 @@ def adam_fp16(
     assert m_fp16.dtype == paddle.float16, "m_fp16 must be float16 tensor"
     assert v_fp32.dtype == paddle.float32, "v_fp32 must be float32 tensor"
     assert (
-        param_fp32.numel() == param_fp16.numel()
+        param_fp32.size == param_fp16.size
     ), "param_fp32 and param_fp16 must have the same number of elements"
     assert (
-        param_fp32.numel() == g_fp16.numel()
+        param_fp32.size == g_fp16.size
     ), "param_fp32 and g_fp16 must have the same number of elements"
     assert (
-        param_fp32.numel() == m_fp16.numel()
+        param_fp32.size == m_fp16.size
     ), "param_fp32 and m_fp32 must have the same number of elements"
     assert (
-        param_fp32.numel() == v_fp32.numel()
+        param_fp32.size == v_fp32.size
     ), "param_fp32 and v_fp32 must have the same number of elements"
     bias_correction1 = 1 - beta1**step
     bias_correction2 = 1 - beta2**step
-    # stream = paddle.device.current_stream()
-    stream = 0
+    stream = paddle.device.cuda.current_stream().cuda_stream
     C.adam_fp16_launcher(
-        int(param_fp32.numel().item()),
-        param_fp32.data_ptr(),
-        param_fp16.data_ptr(),
-        g_fp16.data_ptr(),
-        m_fp16.data_ptr(),
-        v_fp32.data_ptr(),
+        int(param_fp32.size),
+        tensor_to_c_ptr(param_fp32),
+        tensor_to_c_ptr(param_fp16),
+        tensor_to_c_ptr(g_fp16),
+        tensor_to_c_ptr(m_fp16),
+        tensor_to_c_ptr(v_fp32),
         beta1,
         beta2,
         eps,
@@ -182,29 +193,29 @@ def adam_bf16(
     assert m_fp32.dtype == paddle.float32, "m_fp32 must be bfloat16 tensor"
     assert v_fp32.dtype == paddle.float32, "v_fp32 must be float32 tensor"
     assert (
-        param_fp32.numel() == param_bf16.numel()
+        param_fp32.size == param_bf16.size
     ), "param_fp32 and param_bf16 must have the same number of elements"
     assert (
-        param_fp32.numel() == g_bf16.numel()
+        param_fp32.size == g_bf16.size
     ), "param_fp32 and g_fp16 must have the same number of elements"
     assert (
-        param_fp32.numel() == m_fp32.numel()
+        param_fp32.size == m_fp32.size
     ), "param_fp32 and m_m_fp32 must have the same number of elements"
     assert (
-        param_fp32.numel() == v_fp32.numel()
+        param_fp32.size == v_fp32.size
     ), "param_fp32 and v_fp32 must have the same number of elements"
     bias_correction1 = 1 - beta1**step
     bias_correction2 = 1 - beta2**step
-    # stream = torch.cuda.current_stream().cuda_stream
+    stream = paddle.device.cuda.current_stream().cuda_stream
     if not C.is_bf16_supported():
         raise NotImplementedError(f"bfloat16 is not supported on current GPU")
     C.adam_bf16_launcher(
-        param_fp32.numel(),
-        param_fp32.data_ptr(),
-        param_bf16.data_ptr(),
-        g_bf16.data_ptr(),
-        m_fp32.data_ptr(),
-        v_fp32.data_ptr(),
+        param_fp32.size,
+        tensor_to_c_ptr(param_fp32),
+        tensor_to_c_ptr(param_bf16),
+        tensor_to_c_ptr(g_bf16),
+        tensor_to_c_ptr(m_fp32),
+        tensor_to_c_ptr(v_fp32),
         beta1,
         beta2,
         eps,
@@ -213,5 +224,5 @@ def adam_bf16(
         weight_decay,
         bias_correction1,
         bias_correction2,
-        # stream,
+        stream,
     )

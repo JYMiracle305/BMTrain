@@ -24,7 +24,7 @@ def preprocess_input(input, gather_input, split_input):
 
 
 def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
-    print("---------------async_all_gather_linear_func before", input.shape, weight.shape, bias.shape)
+    # print("---------------async_all_gather_linear_func before", input.shape, weight.shape, bias.shape)
     dim = input.dim()
     shape = list(input.shape)
     if dim > 2:
@@ -37,20 +37,20 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
     inputs = input.chunk(rounds, axis=0)
     comm_stream.wait_stream(current_stream)
     outputs = [None] * tp_size * rounds
-    print("--------------- 11111111111 async_all_gather_linear_func", input)
+    # print("--------------- 11111111111 async_all_gather_linear_func", input)
     input = all_gather(inputs[0], config["tp_comm"])
-    print("--------------- 22222222222 async_all_gather_linear_func", input.shape)
+    # print("--------------- 22222222222 async_all_gather_linear_func", input.shape)
 
     input = input.flatten(0, 1)
-    print("--------------- 33333333333 async_all_gather_linear_func", input, weight)
+    # print("--------------- 33333333333 async_all_gather_linear_func", input, weight)
     # 检查输入和权重的数值范围
-    print("input max/min:", input.max().item(), input.min().item())
-    print("weight max/min:", weight.max().item(), weight.min().item())
+    # print("input max/min:", input.max().item(), input.min().item())
+    # print("weight max/min:", weight.max().item(), weight.min().item())
 
     out = F.linear(input, weight, bias)
-    print("--------------- 44444444444 async_all_gather_linear_func", out)
+    # print("--------------- 44444444444 async_all_gather_linear_func", out)
     outs = out.chunk(tp_size, axis=0)
-    print("---------------async_all_gather_linear_func after after", input, outs)
+    # print("---------------async_all_gather_linear_func after after", input, outs)
     for i in range(tp_size):
         outputs[i * rounds] = outs[i]
 
@@ -66,7 +66,7 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
         outs = out.chunk(tp_size, axis=0)
         for j in range(tp_size):
             outputs[(i + 1) + j * rounds] = outs[j]
-        print("---------------async_all_gather_linear_func after after !!!!!!!", input, outputs)
+        # print("---------------async_all_gather_linear_func after after !!!!!!!", input, outputs)
     out = paddle.concat(outputs, axis=0)
     if dim > 2:
         out_shape = list(out.shape)
@@ -74,7 +74,7 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
         shape[0] = shape[0] * tp_size
         out = out.reshape(shape)
 
-    print("---------------async_all_gather_linear_func res", out)
+    # print("---------------async_all_gather_linear_func res", out)
 
     return out
 
@@ -102,10 +102,10 @@ def async_reduce_scatter_linear_func(input, weight, bias, async_chunks=2):
             # out.record_stream(comm_stream)
             shape = list(out.shape)
             shape[0] = shape[0] // config["tp_size"]
-            print("async_reduce_scatter_linear_func shape[0]", shape[0])
+            # print("async_reduce_scatter_linear_func shape[0]", shape[0])
             outputs[i] = paddle.empty(shape, dtype=out.dtype)
-            print("async_reduce_scatter_linear_func out outputs[0]", out.shape, outputs[i].shape,
-                  out.numel().item(), outputs[i].numel().item())
+            # print("async_reduce_scatter_linear_func out outputs[0]", out.shape, outputs[i].shape,
+            #       out.numel().item(), outputs[i].numel().item())
             if out.place.is_gpu_place():
                 outputs[i] = outputs[i].cuda()
             nccl.reduceScatter(
@@ -236,9 +236,14 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         reduce_output_type=None,
         async_gather_chunks=2,
     ):
+        # print("OpParallelLinear OpParallelLinear OpParallelLinear OpParallelLinear forward",
+        #       input, weight, bias, gather_input, gather_output, split_input,
+        #       reduce_output_type, async_gather_chunks)
+        # num_args = len([input, weight, bias, gather_input, gather_output, split_input, reduce_output_type, async_gather_chunks])
+        # print(f"OpParallelLinear.forward 参数数量: {num_args}") 
         if reduce_output_type is not None:
             reduce_output_type = ReduceType(reduce_output_type)
-        print("OpParallelLinear forward", input.shape, weight.shape, bias)
+        # print("OpParallelLinear forward", input.shape, weight.shape, bias)
         ctx.save_for_backward(input, weight, bias)
         ctx.gather_output = gather_output
         ctx.split_input = split_input
@@ -259,9 +264,10 @@ class OpParallelLinear(paddle.autograd.PyLayer):
             )
         else:
             all_input = preprocess_input(input, ctx.gather_input, ctx.split_input)
-            print(f"!!!!!!!!!!!!!!!!!!!!! input, weight, ctx.split_input {all_input.shape} {weight.shape} {bias}")
+            # print(f"!!!!!!!!!!!!!!!!!!!!! input, weight, ctx.split_input \
+            #       {all_input.shape} {weight.shape} {bias}")
             out = F.linear(all_input, weight, bias)
-            print(f"OpParallelLinear F.linear {out.shape}")
+            # print(f"OpParallelLinear F.linear {out.shape}")
         if gather_output:
             all_output_list = all_gather(out, config["tp_comm"])
             all_output_list = all_output_list.chunk(config["tp_size"], dim=0)
@@ -282,9 +288,10 @@ class OpParallelLinear(paddle.autograd.PyLayer):
     def backward(ctx, grad_output):
         input, weight, bias = ctx.saved_tensor()
         gather_output = ctx.gather_output
-
+        # print("~~~~~~~~~~~~~~~OpParallelLinear backward----------", grad_output, input, weight, bias)
         if ctx.reduce_output_type == ReduceType.REDUCE_SCATTER:
-            print("———————--------OpParallelLinear backward------------———————1")
+            # print("———————--------OpParallelLinear backward------------———————1",
+            #       input.stop_gradient, weight.stop_gradient)
             if (not input.stop_gradient) or (not weight.stop_gradient):
                 grad_input, grad_weight, grad_bias = (
                     async_all_gather_linear_backward_func(
@@ -305,7 +312,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         grad_input = grad_weight = grad_bias = None
 
         current_stream = paddle.device.cuda.current_stream()
-        print("———————--------OpParallelLinear backward----------———————2")
+        # print("———————--------OpParallelLinear backward----------———————2")
         if (not input.stop_gradient) or (not weight.stop_gradient):
             if ctx.gather_input:
                 # async the all_gather
@@ -320,27 +327,31 @@ class OpParallelLinear(paddle.autograd.PyLayer):
             else:
                 all_input = preprocess_input(input, ctx.gather_input, ctx.split_input)
 
-        print("———————--------------OpParallelLinear backward----------———————3")
-        print("----------OpParallelLinear backward----------", input.shape, grad_output.shape, weight.shape)
+        # print("———————--------------OpParallelLinear backward----------———————3")
+        # print("----------OpParallelLinear backward----------", input.shape,
+        #       grad_output.shape, weight.shape)
         if not input.stop_gradient:
-            grad_all_input = grad_output.matmul(weight)
+            # print("before grad_output.matmul(weight)", grad_output, weight)
+            grad_all_input = grad_output.matmul(weight.T)
+            # print("after grad_output.matmul(weight)", grad_all_input)
             grad_input = paddle.zeros_like(input)
             if ctx.gather_input:
                 # async the reduce_scatter
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
-                    grad_input.record_stream(config["tp_comm_stream"])
-                    grad_all_input.record_stream(config["tp_comm_stream"])
+                    # grad_input.record_stream(config["tp_comm_stream"])
+                    # grad_all_input.record_stream(config["tp_comm_stream"])
                     nccl.reduceScatter(
                         grad_all_input,
                         grad_input,
                         "sum",
                         config["tp_comm"],
                     )
+                # print("after nccl.reduceScatter(", grad_input)
             elif ctx.reduce_output_type is None:
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
-                    grad_input.record_stream(config["tp_comm_stream"])
+                    # grad_input.record_stream(config["tp_comm_stream"])
                     nccl.allReduce(
                         grad_all_input,
                         grad_all_input,
@@ -354,10 +365,10 @@ class OpParallelLinear(paddle.autograd.PyLayer):
             if ctx.split_input:
                 with paddle.device.cuda.stream_guard(config["tp_comm_stream"]):
                     config["tp_comm_stream"].wait_stream(current_stream)
-                    grad_input.record_stream(config["tp_comm_stream"])
+                    # grad_input.record_stream(config["tp_comm_stream"])
                     grad_input = all_gather(grad_input, config["tp_comm"])
 
-        print("———————--------------OpParallelLinear backward----------———————4")
+        # print("———————--------------OpParallelLinear backward----------———————4")
         # wait all_gather
         if ctx.gather_input:
             current_stream.wait_event(gather_event)
@@ -367,10 +378,21 @@ class OpParallelLinear(paddle.autograd.PyLayer):
                 .t()
                 .matmul(all_input.reshape([-1, all_input.shape[-1]]))
             )
-        print("———————--------------OpParallelLinear backward----------———————5")
+        # print("———————--------------OpParallelLinear backward----------———————5")
         if bias is not None and not bias.stop_gradient:
             grad_bias = grad_output.reshape([-1, grad_output.shape[-1]]).sum(0)
 
         current_stream = paddle.device.cuda.current_stream()
         current_stream.wait_stream(config["tp_comm_stream"])
-        return grad_input, grad_weight, grad_bias, None, None, None, None, None
+
+        # print("------------OpParallelLinear return 输入", input, weight, bias)
+        # print("------------OpParallelLinear return",
+        #       grad_input, grad_weight, grad_bias, None, None, None, None, None)
+        # return grad_input, grad_weight, grad_bias, None, None, None, None, None
+        print("OpParallelLinear return---------------- 标志")
+        if bias is not None and not bias.stop_gradient:
+            print("[Backward] 返回3个梯度 (input, weight, bias)")
+            return grad_input, grad_weight, grad_bias
+        else:
+            print("[Backward] 返回2个梯度 (input, weight)", input.stop_gradient, weight.stop_gradient)
+            return grad_input, grad_weight

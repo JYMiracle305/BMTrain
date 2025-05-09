@@ -58,7 +58,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
             print(f"    所属层类型: {param.__class__.__name__}")  # 显示参数所属的类名
         # ===============================================
         
-        params = list(params)
+        # params = list(params)
 
         # print("\n2222222222222222222222222222=== 原始参数信息 ===")
         # if len(params) == 0:
@@ -74,6 +74,10 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
         parameters = [
             {
                 'params': params,
+                'lr': lr,
+                'betas': betas,
+                'eps': eps,
+                'weight_decay': weight_decay
             }
         ]
 
@@ -140,37 +144,31 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                             "Adam only supports fp32, fp16 and bf16 gradients"
                         )
 
-                    state = self.state[p]
+                    state = self._accumulators[p]
                     # Lazy state initialization
                     if len(state) == 0:
                         state["step"] = 0
                         # Exponential moving average of gradient values
-                        state["exp_avg"] = paddle.zeros(p.size(), dtype=paddle.float32)  # on host
+                        state["exp_avg"] = paddle.zeros(p.shape, dtype=paddle.float32).cpu()  # on host
                         # Exponential moving average of squared gradient values
-                        state["exp_avg_sq"] = paddle.zeros(p.size(), dtype=paddle.float32)  # on host
+                        state["exp_avg_sq"] = paddle.zeros(p.shape, dtype=paddle.float32).cpu()  # on host
 
                         if p.dtype == paddle.float32:
-                            state["_param_fp32"] = paddle.empty(
-                                p.size(), dtype=paddle.float32, pin_memory=True
-                            )  # on host
-                            state["_param_fp32"].copy_(p)
+                            state["_param_fp32"] = paddle.empty(p.shape, dtype=paddle.float32).cpu()  # on host
+                            state["_param_fp32"].copy_(p, True)
 
                             # placeholder
-                            state["_grad_fp32"] = paddle.empty(
-                                p.size(), dtype=paddle.float32, pin_memory=True
-                            )  # on host
+                            state["_grad_fp32"] = paddle.empty(p.shape, dtype=paddle.float32).cpu()  # on host
                         else:
-                            state["_param_fp32"] = paddle.empty(
-                                p.size(), dtype=paddle.float32
-                            )  # on host
-                            state["_param_fp32"].copy_(p)
+                            state["_param_fp32"] = paddle.empty(p.shape, dtype=paddle.float32).cpu()  # on host
+                            state["_param_fp32"].copy_(p.astype(paddle.float32), True)
 
                             # placeholder
                             state["_param_fp16"] = paddle.empty(
-                                p.size(), dtype=p.dtype, pin_memory=True
+                                p.shape, dtype=p.dtype
                             )  # on host
                             state["_grad_fp16"] = paddle.empty(
-                                p.size(), dtype=p.dtype, pin_memory=True
+                                p.shape, dtype=p.dtype
                             )  # on host
 
                     if p not in self._events:
@@ -192,9 +190,9 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
         # transfer parameters to host asynchronously
         for param, state, event, _, _, _, _, _ in update_params:
             if param.dtype == paddle.float32:
-                state["_grad_fp32"].copy_(param.grad, non_blocking=True)
+                state["_grad_fp32"].copy_(param.grad, True)
             else:
-                state["_grad_fp16"].copy_(param.grad, non_blocking=True)
+                state["_grad_fp16"].copy_(param.grad, True)
             paddle.device.cuda.current_stream().record_event(event)
         sum_delta = 0
         sum_sq_delta = 0
@@ -236,7 +234,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                     **other_kwargs
                 )
                 # transfer parameters back to device asynchronously
-                param.copy_(state["_param_fp32"], non_blocking=True)
+                param.copy_(state["_param_fp32"], True)
                 state["step"] += 1
             else:
                 state["step"] += 1
@@ -245,12 +243,12 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                 else:
                     grad = state["_grad_fp16"]
                 F.adam_cpu(
-                    state["_param_fp32"].view(-1),
-                    state["_param_fp16"].view(-1),
+                    state["_param_fp32"].reshape([-1]),
+                    state["_param_fp16"].reshape([-1]),
                     param._delta_info if self.record_delta else None,
-                    grad.view(-1),
-                    state["exp_avg"].view(-1),
-                    state["exp_avg_sq"].view(-1),
+                    grad.reshape([-1]),
+                    state["exp_avg"].reshape([-1]),
+                    state["exp_avg_sq"].reshape([-1]),
                     beta1,
                     beta2,
                     eps,
@@ -259,12 +257,12 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                     weight_decay,
                     state["step"],
                 )
-                total_numel += state["_param_fp16"].numel()
+                total_numel += state["_param_fp16"].numel().item()
                 if self.record_delta:
                     sum_delta += param._delta_info[2].item()
                     sum_sq_delta += param._delta_info[3].item()
                 # transfer parameters back to device asynchronously
-                param.copy_(state["_param_fp16"], non_blocking=True)
+                param.copy_(state["_param_fp16"], True)
         if self.record_delta:
             self.avg_delta = sum_delta / total_numel
             self.var_delta = sum_sq_delta / total_numel - self.avg_delta**2
@@ -335,7 +333,7 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                     with paddle.no_grad():
                         v["_param_fp32"] = paddle.empty(
                             param.size(), dtype=paddle.float32
-                        )
+                        ).cpu()
                         v["_param_fp32"].copy_(param)
 
                 for name, dtype in [
@@ -353,15 +351,15 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
                     ].pin_memory()  # on host
                     # initialize placeholders
                     state[param]["_grad_fp32"] = paddle.empty(
-                        param.size(), dtype=paddle.float32, pin_memory=True
+                        param.size(), dtype=paddle.float32
                     )  # on host
                 else:
                     # initialize placeholders
                     state[param]["_param_fp16"] = paddle.empty(
-                        param.size(), dtype=param.dtype, pin_memory=True
+                        param.size(), dtype=param.dtype
                     )  # on host
                     state[param]["_grad_fp16"] = paddle.empty(
-                        param.size(), dtype=param.dtype, pin_memory=True
+                        param.size(), dtype=param.dtype
                     )  # on host
             else:
                 state[k] = v

@@ -11,9 +11,12 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
     def forward(ctx, x : paddle.Tensor, target : paddle.Tensor, ignore_index: int):
         assert x.ndim == 2
-        softmax = paddle.empty(x.shape, device=x.device, dtype=x.dtype)
-        out = paddle.empty(x.shape[0], device=x.device, dtype='float')
-        
+        softmax = paddle.empty(x.shape, dtype=x.dtype)
+        out = paddle.empty([x.shape[0]], dtype=paddle.float32)
+        if x.place.is_gpu_place():
+            softmax = softmax.cuda()
+            out = out.cuda()
+
         F.cross_entropy_forward(
             x.shape[0], x.shape[1],
             x, target,
@@ -22,10 +25,12 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
         )
         ctx.ignore_index = ignore_index
         ctx.save_for_backward(softmax, target)
+        # print(f"~~~~~~~~~~~~~~~~OpFusedCrossEntropy forward~~~~~~~~~~~~~~~~~~~~~~~ {out}")
         return out
         
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
+        # print(f"~~~~~~~~~~~~~~~~OpFusedCrossEntropy grad_output~~~~~~~~~~~~~~~~~~~~~~~ {grad_output}")
         grad_output = grad_output.contiguous()
         softmax, target = ctx.saved_tensor()
         F.cross_entropy_backward_inplace(
@@ -34,7 +39,7 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
             softmax,
             ctx.ignore_index,
         )
-        return (softmax, None, None)
+        return (softmax, None)
 
 class VPFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
@@ -42,9 +47,9 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
         comm = config['tp_comm']
         rank = config['tp_rank']
         world_size = config['tp_size']
-        print(f"-----------------------VPFusedCrossEntropy {logits.shape} {paddle.max(logits, axis=-1)}")
+        # print(f"-----------------------VPFusedCrossEntropy {logits.shape} {paddle.max(logits, axis=-1)}")
         max_logits = paddle.max(logits, axis=-1).astype(paddle.float32)
-        print(f"-----------------------VPFusedCrossEntropy {max_logits} {max_logits.shape}")
+        # print(f"-----------------------VPFusedCrossEntropy {max_logits} {max_logits.shape}")
         max_logits = all_reduce(max_logits, op="max", comm=comm)
 
         partition_vocab_size = logits.shape[-1]
@@ -87,17 +92,21 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
 
         # Normalize
         ctx.save_for_backward(softmax, target_mask, masked_target_1d)
-        print("ctx.save_for_backward OK!!!!!!!!!!!!!")
+        loss.stop_gradient = False
+        # print("ctx.save_for_backward OK!!!!!!!!!!!!!", loss, softmax, target_mask, masked_target_1d)
+        # print("Loss stop_gradient:", loss.stop_gradient)
+
         return loss
 
     @staticmethod
     def backward(ctx, grad_output):
-        print("VPFusedCrossEntropy backword start !!!!!!!!!!!!!")
+        # print("VPFusedCrossEntropy backword start !!!!!!!!!! 1:", grad_output.mean().item())
         # Retreive tensors from the forward path.
         softmax, target_mask, masked_target_1d = ctx.saved_tensor()
         # All the inputs have softmax as thier gradient.
         grad_input = softmax
         # For simplicity, work with the 2D gradient.
+        # print("VPFusedCrossEntropy backword start !!!!!!!!!!!!!", grad_input, grad_output)
         partition_vocab_size = softmax.shape[-1]
         grad_2d = grad_input.reshape([-1, partition_vocab_size])
 
@@ -108,19 +117,21 @@ class VPFusedCrossEntropy(paddle.autograd.PyLayer):
         softmax_update = 1.0 - target_mask.reshape([-1]).astype('float32')
 
         grad_2d[arange_1d, masked_target_1d] -= softmax_update
-        print("---------VPFusedCrossEntropy backword-----------",
-              grad_input.dtype, grad_output.dtype)
-        print("---------VPFusedCrossEntropy backword-----------",
-              grad_input, grad_output)
+        # print("---------VPFusedCrossEntropy backword----------- 1",
+            #   grad_input.dtype, grad_output.dtype)
+        # print("---------VPFusedCrossEntropy backword----------- 2",
+            #   grad_input, grad_output)
         grad_output_casted = grad_output.astype(grad_input.dtype)
-        print("---------VPFusedCrossEntropy backword-----------",
-              grad_input.dtype, grad_output_casted.dtype)
+        # print(f"---------VPFusedCrossEntropy backword----------- 3 \
+        #       {grad_input}, {grad_output_casted},   \
+        #       {grad_output_casted.reshape([*grad_input.shape[:-1]]).unsqueeze(axis=-1)}")
         grad_input.set_value(
             paddle.multiply(
                 grad_input, (grad_output_casted.reshape([*grad_input.shape[:-1]]).unsqueeze(axis=-1))
             )
         )
 
+        # print("---------VPFusedCrossEntropy backword----------- ok", grad_input)
         return grad_input, None
 
 class FusedCrossEntropy(paddle.nn.Layer):
@@ -247,7 +258,7 @@ class FusedCrossEntropy(paddle.nn.Layer):
 
     def forward(self, input: paddle.Tensor, target: paddle.Tensor) -> paddle.Tensor:
         if self.parallel:
-            print("-----------------------FusedCrossEntropy input", input)
+            # print("-----------------------FusedCrossEntropy input", input)
             ret = VPFusedCrossEntropy.apply(input, target.astype(paddle.int64))
         else:
             if input.dtype == paddle.float32:
@@ -259,7 +270,7 @@ class FusedCrossEntropy(paddle.nn.Layer):
                         reduction=self.reduction,
                         label_smoothing=self.label_smoothing)
 
-            ret = OpFusedCrossEntropy.apply(input, target.astype(paddle.int64), self.ignore_index) # return float tensor
+            ret = OpFusedCrossEntropy.apply(input, target.astype(paddle.int32), self.ignore_index) # return float tensor
 
         if self.weight is not None:
             if self.weight.dim() != 1 or self.weight.shape[0] != input.shape[1]:

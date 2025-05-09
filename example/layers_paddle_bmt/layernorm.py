@@ -26,7 +26,7 @@ class Layernorm(bmt.DistributedModule):
             # print("--------------------self.weight----------------", self.weight.shape)
             # self.bias = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
             # print("--------------------self.bias----------------", self.bias.shape)
-            print("------------Layernorm-------------", self.normalized_shape)
+            # print("------------Layernorm-------------", self.normalized_shape)
             self.weight = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
                     default_initializer=paddle.nn.initializer.XavierNormal())
             self.bias = self.create_parameter(shape=self.normalized_shape, dtype=dtype,

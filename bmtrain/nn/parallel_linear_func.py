@@ -24,7 +24,7 @@ def preprocess_input(input, gather_input, split_input):
 
 
 def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
-    print(f"---------------async_all_gather_linear_func before input.size() {input.size()} weight.size(){weight.size()} bias.size() {bias.size()}")
+    # print(f"---------------async_all_gather_linear_func before input.size() {input.size()} weight.size(){weight.size()} bias.size() {bias.size()}")
     dim = input.dim()
     shape = list(input.shape)
     if dim > 2:
@@ -40,7 +40,7 @@ def async_all_gather_linear_func(input, weight, bias, async_chunks=2):
 
     input = all_gather(inputs[0], config["tp_comm"])
     input = input.flatten(0, 1)
-    print(f"---------------async_all_gather_linear_func after input.size() {input.size()} weight.size(){weight.size()} bias.size() {bias.size()}")
+    # print(f"---------------async_all_gather_linear_func after input.size() {input.size()} weight.size(){weight.size()} bias.size() {bias.size()}")
     out = F.linear(input, weight, bias)
     outs = out.chunk(tp_size, dim=0)
     for i in range(tp_size):
@@ -244,7 +244,7 @@ class OpParallelLinear(torch.autograd.Function):
         else:
             all_input = preprocess_input(input, ctx.gather_input, ctx.split_input)
             out = F.linear(all_input, weight, bias)
-            print(f"-------------OpParallelLinear F.linear {out.size()}")
+            # print(f"-------------OpParallelLinear F.linear {out.size()}")
 
         if gather_output:
             all_output_list = all_gather(out, config["tp_comm"])

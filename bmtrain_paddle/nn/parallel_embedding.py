@@ -44,20 +44,20 @@ class VPEmbedding(bmt.DistributedModule):
         #     tp_split_dim=0,
         #     tp_mode=True,
         # )
-        print("-------------------------embedding_size, self.vocab_size_per_partition",
-              embedding_size, self.vocab_size_per_partition)
+        # print("-------------------------embedding_size, self.vocab_size_per_partition",
+        #       embedding_size, self.vocab_size_per_partition)
         self.weight = paddle.create_parameter(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype,
             default_initializer=paddle.nn.initializer.XavierNormal())
 
     def forward(self, x: paddle.Tensor, projection=False):
         if not projection:
-            print("before weight = all_gather", self.weight.shape)
+            # print("before weight = all_gather", self.weight.shape)
             weight = all_gather(self.weight, comm=config["tp_comm"]).transpose([0, 2, 1])
-            print("after weight = all_gather", weight.shape)
+            # print("after weight = all_gather", weight.shape)
             weight = weight.flatten(0, 1)
-            print("VPEmbedding x, weight", x.shape, weight.shape)  #(2, 256) （10240, 25600）
+            # print("VPEmbedding x, weight", x.shape, weight.shape)  #(2, 256) （10240, 25600）
             out = F.embedding(x, weight)
-            print("VPEmbedding", out.shape)
+            # print("VPEmbedding", out.shape)
             return out
         else:
             x = bmt.distributed.all_gather(x, comm=bmt.config["tp_comm"]).reshape(

@@ -124,16 +124,16 @@ def allReduce(
     datatype = dtype2nccl(src.dtype)
     operator = op2nccl(op)
 
-    print(f"src {src} dst {dst}")
+    # print(f"src {src} dst {dst}")
     sendbuff = tensor_to_c_ptr(src)
     recvbuff = tensor_to_c_ptr(dst)
 
-    print(f"src_ptr: {hex(sendbuff)}")  # 应为非零地址（如0x7f8a5c000000）
-    print(f"dst_ptr: {hex(recvbuff)}")  # 应为非零地址
-    print("src.shape == dst.shape", src.shape, dst.shape)
-    assert src.shape == dst.shape, "Buffer size not aligned"
-    print("------------nccl all reduce--------------", count,
-          paddle.device.cuda.current_stream().cuda_stream)
+    # print(f"src_ptr: {hex(sendbuff)}")  # （如0x7f8a5c000000）
+    # print(f"dst_ptr: {hex(recvbuff)}")  # 应为非零地址
+    # print("src.shape == dst.shape", src.shape, dst.shape, src.size, dst.size)
+    assert src.size == dst.size, "Buffer size not aligned"
+    # print("------------nccl all reduce--------------", count,
+    #       paddle.device.cuda.current_stream().cuda_stream)
     C.ncclAllReduce(
         sendbuff,
         recvbuff,
@@ -143,8 +143,8 @@ def allReduce(
         comm.ptr,
         paddle.device.cuda.current_stream().cuda_stream
     )
-    print(f"after src_ptr: {hex(sendbuff)}")  # 应为非零地址（如0x7f8a5c000000）
-    print(f"after dst_ptr: {hex(recvbuff)}")  # 应为非零地址
+    # print(f"after src_ptr: {hex(sendbuff)}")  # （如0x7f8a5c000000）
+    # print(f"after dst_ptr: {hex(recvbuff)}")  # 应为非零地址
 
 def send(src : paddle.Tensor,
          peer : int,
@@ -289,9 +289,9 @@ def allGather(
     sendcount = src.numel().item()
     datatype = dtype2nccl(src.dtype)
     sendbuff = tensor_to_c_ptr(src)
-    recvbuff = tensor_to_c_ptr(dst)
-    print("-----------------------allGather--------------------", dst.size, dst.numel().item(), sendcount)
-    print("-----------------------allGather--------------------", src.size, src.numel().item(), sendcount)
+    # recvbuff = tensor_to_c_ptr(dst)
+    # print(f"------------allGather----------{ dst.size}, {dst.numel().item()}, {sendcount}, \
+    #         {src.size}, {src.numel().item()}")
     assert dst.numel().item() % sendcount == 0, "Buffer size not aligned"
     C.ncclAllGather(
         sendbuff, 
@@ -332,7 +332,7 @@ def reduceScatter(
     sendbuff = tensor_to_c_ptr(src)
     recvbuff = tensor_to_c_ptr(dst)
 
-    print("src.numel().item() % recvcount == 0", src.numel().item(), recvcount)
+    # print("src.numel().item() % recvcount == 0", src.numel().item(), recvcount)
     assert src.numel().item() % recvcount == 0, "Buffer size not aligned"
     C.ncclReduceScatter(
         sendbuff,

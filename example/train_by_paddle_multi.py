@@ -17,7 +17,7 @@ from bmtrain_paddle import inspect
 def main():
     bmt.init_distributed(
         seed=0,
-        tp_size=2,
+        tp_size=1,
     )
 
     model = GPT(
@@ -62,10 +62,10 @@ def main():
             break
     
     if config['tp_size'] > 1:
-        loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100, parallel=True)
+        # loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100, parallel=True)
+        loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100)
     else:
         loss_func = paddle.nn.CrossEntropyLoss(ignore_index=-100)
-
     # print(f"model.parameters() {model.parameters()}")
 
     optimizer = optim.AdamOptimizer(model.parameters(), weight_decay=1e-2)
@@ -75,39 +75,38 @@ def main():
     optim_manager = optim.OptimManager(loss_scale=2**20)
     optim_manager.add_optimizer(optimizer, lr_scheduler)
 
-    paddle.set_default_dtype(paddle.float32)
-
-    # bmt.synchronize()
+    bmt.synchronize()
     
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(1000):
+    for iteration in range(10):
         # load data
         st = time.time()
 
         with inspect.inspect_tensor() as inspector:
-            pos = paddle.arange(enc_input.shape[1], dtype='int64').unsqueeze(0).cuda().tile([enc_input.shape[0], 1])
-            print("输入形状", enc_input.shape, pos)
+            pos = paddle.arange(enc_input.shape[1], dtype=paddle.int64).unsqueeze(0).cuda().tile([enc_input.shape[0], 1])
+            # print("输入形状", enc_input.shape, pos)
             logits = model(
                 enc_input,
                 pos,
                 pos < enc_length[:, None]
             )
-            print("Logits 形状:", logits.shape, logits)
+            # print("Logits 形状:", logits.shape, logits)
             batch, seq_len, vocab_out_size = logits.shape
 
-            print(f"Iter {iteration} 当前学习率: {optimizer.get_lr()}")
+            # print(f"Iter {iteration} 当前学习率: {optimizer.get_lr()}")
 
             if config['tp_size'] > 1:
                 loss = loss_func(logits.reshape([batch * seq_len, vocab_out_size]), targets.reshape([batch * seq_len]))
             else:
                 loss = loss_func(logits.astype(paddle.float32).reshape([batch * seq_len, vocab_out_size]), targets.reshape([batch * seq_len]))
 
-            print(f"Loss 值: {loss.item()} {loss}")
-            # global_loss = bmt.sum_loss(loss).item()
-            loss.backward()    #optim_manager.backward(loss)
-
+            global_loss = bmt.sum_loss(loss).item()
+            
+            optim_manager.zero_grad() 
+            optim_manager.backward(loss)  # loss.backward()
+            # print(f"Loss 值: {loss} {loss.item()} {global_loss}")
             # 添加梯度检查代码
             # for name, param in list(model.named_parameters())[:10]:
             #     if param.grad is None:
@@ -121,14 +120,6 @@ def main():
             #     else:
             #         print(f"参数 {name} 梯度为 None")
 
-            # 检查参数是否更新
-            weight_before = model.word_emb.weight.clone()
-            optimizer.step() #optim_manager.step() 
-            
-            lr_scheduler.step()
-            weight_after = model.word_emb.weight.clone()
-            print(f"权重变化: {(weight_after - weight_before).abs().sum().item()}")
-            optimizer.clear_grad()  # 清空梯度
         # print inspected tensors in the forward & backward pass
         # print parameters of the model
         if iteration % 100 == 0:
@@ -137,11 +128,17 @@ def main():
                     inspector.get_summary()
                 )
             )
-            # bmt.print_rank(
-            #     inspect.format_summary(
-            #         inspect.inspect_model(model, "*")
-            #     )
-            # )
+            bmt.print_rank(
+                inspect.format_summary(
+                    inspect.inspect_model(model, "*")
+                )
+            )
+
+        # 检查参数是否更新
+        weight_before = model.word_emb.weight.clone()
+        optim_manager.step()  #optimizer.step()
+        weight_after = model.word_emb.weight.clone()
+        # print(f"权重变化: {(weight_after - weight_before).abs().sum().item()}")
 
         # record time and loss
         iteration_time = time.time() - st
@@ -150,25 +147,17 @@ def main():
         avg_loss_recorder.record(global_loss)
 
         # print time and loss
-        # bmt.print_rank(
-        #     "| Iter: {:6d} | loss: {:.4f} average_loss: {:.4f} | lr: {:.4e} scale: {:10.4f} | time: {:.4f}".format(
-        #         iteration,
-        #         global_loss.item(),
-        #         avg_loss_recorder.value.item(),
-        #         lr_scheduler.current_lr,
-        #         optimizer.loss_scale,
-        #         avg_time_recorder.value
-        #     )
-        # )
-        print(
-            "| Iter: {:6d} | loss: {:.4f} average_loss: {:.4f} | lr: {:.4e} | time: {:.4f}".format(
+        bmt.print_rank(
+            "| Iter: {:6d} | loss: {:.4f} average_loss: {:.4f} | lr: {:.4e} scale: {:10.4f} | time: {:.4f}".format(
                 iteration,
                 global_loss,
                 avg_loss_recorder.value,
-                lr_scheduler.get_lr(),
+                lr_scheduler.current_lr,
+                optim_manager.loss_scale,
                 avg_time_recorder.value
             )
         )
+
         # save model
         # if iteration % 1000 == 0:
         #     bmt.save(model, "ckpt-%d.pt" % iteration)

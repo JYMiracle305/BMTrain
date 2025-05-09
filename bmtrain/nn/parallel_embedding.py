@@ -47,9 +47,9 @@ class VPEmbedding(bmt.DistributedModule):
 
     def forward(self, x: torch.Tensor, projection=False):
         if not projection:
-            print(f"before weight = all_gather {self.weight.shape}", all_gather(self.weight, comm=config["tp_comm"]).shape)
+            # print(f"before weight = all_gather {self.weight.shape}", all_gather(self.weight, comm=config["tp_comm"]).shape)
             weight = all_gather(self.weight, comm=config["tp_comm"]).flatten(0, 1)
-            print(f" VPEmbedding weight shape {weight.shape}")
+            # print(f" VPEmbedding weight shape {weight.shape}")
             out = F.embedding(x, weight)
             return out
         else:

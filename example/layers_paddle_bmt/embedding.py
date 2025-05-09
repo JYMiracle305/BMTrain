@@ -16,7 +16,7 @@ class Embedding(bmt.DistributedModule):
                  _weight: Optional[paddle.Tensor] = None,
                  dtype=None):
         super().__init__()
-        print("embeddings init", num_embeddings, embedding_dim)
+        # print("embeddings init", num_embeddings, embedding_dim)
         self.num_embeddings = num_embeddings
         self.embedding_dim = embedding_dim
         if padding_idx is not None:
@@ -34,9 +34,9 @@ class Embedding(bmt.DistributedModule):
         # else:
         #     self.weight = bmt.DistributedParameter(_weight)
         if _weight is None:
-            print("if _weight is None:", num_embeddings, embedding_dim)
+            # print("if _weight is None:", num_embeddings, embedding_dim)
             dtype=dtype if dtype else paddle.get_default_dtype()
-            print("embedding weight dtype", dtype)
+            # print("embedding weight dtype", dtype)
             self.weight = self.create_parameter(
                 shape=[num_embeddings, embedding_dim],
                 dtype=dtype if dtype else paddle.get_default_dtype(),
@@ -48,9 +48,9 @@ class Embedding(bmt.DistributedModule):
                 dtype=_weight.dtype,
                 default_initializer=paddle.nn.initializer.Assign(_weight)
             )
-        print("-------------Embedding-----------", self.weight.shape)
+        # print("-------------Embedding-----------", self.weight.shape)
         self.sparse = sparse
-        print("sparse-----------", sparse)
+        # print("sparse-----------", sparse)
 
     @classmethod
     def from_pretrained(cls, embeddings, freeze=True, padding_idx=None,
@@ -58,7 +58,7 @@ class Embedding(bmt.DistributedModule):
                         sparse=False):
         assert embeddings.ndim == 2, 'Embeddings parameter is expected to be 2-dimensional'
         rows, cols = embeddings.shape
-        print("embeddings from_pretrained", rows, cols)
+        # print("embeddings from_pretrained", rows, cols)
         embedding = cls(
             num_embeddings=rows,
             embedding_dim=cols,
@@ -81,15 +81,15 @@ class Embedding(bmt.DistributedModule):
             #     input, self.weight, self.padding_idx, self.max_norm,
             #     self.norm_type, self.scale_grad_by_freq, self.sparse
             # )
-            print(f"not projection Embedding input:{input.shape}, self.weight:{self.weight.shape}")
+            # print(f"not projection Embedding input:{input.shape}, self.weight:{self.weight.shape}")
             out = F.embedding(
                 input, self.weight, self.padding_idx, self.sparse
             )
-            print("!!!!!!!!!!!!!!!Embedding", out.shape)
+            # print("!!!!!!!!!!!!!!!Embedding", out.shape)
             return out
         else:
             #需要确保 input 的最后一个维度与 self.weight 的第一个维度一致
-            print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
+            # print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
             out = F.linear(input, self.weight.T)
             return out
 
