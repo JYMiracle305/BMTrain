@@ -63,7 +63,7 @@ print(ptr, shape, dtype)
 # -------------------------------
 print(dtype.name)
 # 1. 将 Paddle dtype 转换为 CuPy dtype（例如 float32 → cp.float32）
-cp_dtype = getattr(cp, dtype.name.split('.')[-1])
+# cp_dtype = getattr(cp, dtype.name.split('.')[-1])
 cp_dtype = cp.float32
 # 2. 计算内存总大小（元素数量 * 每个元素字节数）
 element_size = cp.dtype(cp_dtype).itemsize

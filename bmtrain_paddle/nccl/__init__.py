@@ -289,7 +289,7 @@ def allGather(
     sendcount = src.numel().item()
     datatype = dtype2nccl(src.dtype)
     sendbuff = tensor_to_c_ptr(src)
-    # recvbuff = tensor_to_c_ptr(dst)
+    recvbuff = tensor_to_c_ptr(dst)
     # print(f"------------allGather----------{ dst.size}, {dst.numel().item()}, {sendcount}, \
     #         {src.size}, {src.numel().item()}")
     assert dst.numel().item() % sendcount == 0, "Buffer size not aligned"

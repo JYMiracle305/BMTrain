@@ -11,8 +11,8 @@ def has_inf_nan(g_half: torch.Tensor, out: torch.Tensor) -> None:
     mid = torch.zeros(1024, device=out.device, dtype=out.dtype)
     stream = torch.cuda.current_stream().cuda_stream
     if g_half.dtype == torch.float16:
-        print(f"has_inf_nan 指针 {g_half.numel()}, {hex(g_half.data_ptr())},  \
-              {hex(mid.data_ptr())}, {hex(out.data_ptr())}, {stream}")
+        # print(f"has_inf_nan 指针 {g_half.numel()}, {hex(g_half.data_ptr())},  \
+        #       {hex(mid.data_ptr())}, {hex(out.data_ptr())}, {stream}")
         C.has_nan_inf_fp16_launcher(
             g_half.numel(), g_half.data_ptr(), mid.data_ptr(), out.data_ptr(), stream
         )

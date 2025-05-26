@@ -29,25 +29,25 @@ class Embedding(bmt.DistributedModule):
         self.max_norm = max_norm
         self.norm_type = norm_type
         self.scale_grad_by_freq = scale_grad_by_freq
-        # if _weight is None:
-        #     self.weight = bmt.DistributedParameter(paddle.empty([num_embeddings, embedding_dim], dtype=dtype).cuda())
-        # else:
-        #     self.weight = bmt.DistributedParameter(_weight)
         if _weight is None:
-            # print("if _weight is None:", num_embeddings, embedding_dim)
-            dtype=dtype if dtype else paddle.get_default_dtype()
-            # print("embedding weight dtype", dtype)
-            self.weight = self.create_parameter(
-                shape=[num_embeddings, embedding_dim],
-                dtype=dtype if dtype else paddle.get_default_dtype(),
-                default_initializer=paddle.nn.initializer.XavierNormal()
-            )
+            self.weight = bmt.DistributedParameter(paddle.empty([num_embeddings, embedding_dim], dtype=dtype).cuda())
         else:
-            self.weight = self.create_parameter(
-                shape=_weight.shape,
-                dtype=_weight.dtype,
-                default_initializer=paddle.nn.initializer.Assign(_weight)
-            )
+            self.weight = bmt.DistributedParameter(_weight)
+        # if _weight is None:
+        #     # print("if _weight is None:", num_embeddings, embedding_dim)
+        #     dtype=dtype if dtype else paddle.get_default_dtype()
+        #     # print("embedding weight dtype", dtype)
+        #     self.weight = self.create_parameter(
+        #         shape=[num_embeddings, embedding_dim],
+        #         dtype=dtype if dtype else paddle.get_default_dtype(),
+        #         default_initializer=paddle.nn.initializer.XavierNormal()
+        #     )
+        # else:
+        #     self.weight = self.create_parameter(
+        #         shape=_weight.shape,
+        #         dtype=_weight.dtype,
+        #         default_initializer=paddle.nn.initializer.Assign(_weight)
+        #     )
         # print("-------------Embedding-----------", self.weight.shape)
         self.sparse = sparse
         # print("sparse-----------", sparse)

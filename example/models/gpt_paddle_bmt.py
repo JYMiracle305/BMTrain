@@ -39,20 +39,19 @@ class GPT_paddle_bmt(bmt.DistributedModule):
                 for _ in range(num_layers)
             ])
         else:
-            self.transformers = bmt.TransformerBlockList([
-                bmt.Block(
-                    TransformerEncoder(
-                        dim_model, dim_head, num_heads, dim_ff, bias, dtype
-                    )
-                )
-                for _ in range(num_layers)
-            ])
-            # self.transformers = paddle.nn.LayerList([
-            #     TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
+            # self.transformers = bmt.TransformerBlockList([
+            #     bmt.Block(
+            #         TransformerEncoder(
+            #             dim_model, dim_head, num_heads, dim_ff, bias, dtype
+            #         )
+            #     )
             #     for _ in range(num_layers)
             # ])
-            # self.transformers = TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
-
+            self.transformers = paddle.nn.LayerList([
+                TransformerEncoder(dim_model, dim_head, num_heads, dim_ff, bias, dtype)
+                for _ in range(num_layers)
+            ])
+            
         # LayerNorm
         self.layernorm = Layernorm(dim_model, dtype=dtype)
 
@@ -77,10 +76,10 @@ class GPT_paddle_bmt(bmt.DistributedModule):
         out = self.pos_emb(pos) + self.word_emb(input)
         # print("After adding position and word embeddings shape:", out.shape, out)
 
-        out = self.transformers(out, mask_2d, None)
-        # for i, layer in enumerate(self.transformers):
-        #     out = layer(out, mask_2d, None)
-        #     print(f"After Transformer layer {i} shape:", out.shape)
+        # out = self.transformers(out, mask_2d, None)
+        for i, layer in enumerate(self.transformers):
+            out = layer(out, mask_2d, None)
+            # print(f"After Transformer layer {i} shape:", out.shape)
         # print(f"After Transformer layer:", out.shape, out)
 
         out = self.layernorm(out)

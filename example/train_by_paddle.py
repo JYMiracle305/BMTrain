@@ -68,7 +68,7 @@ def main():
     # 损失函数
     loss_func = nn.CrossEntropyLoss(ignore_index=-100)
 
-    # 优化器
+    
     lr_scheduler = optim.lr.NoamDecay(
         d_model=2560,
         warmup_steps=4000,
@@ -77,7 +77,7 @@ def main():
         verbose=False
     )
     # paddle.set_default_dtype('float32')
-
+    # 优化器
     optimizer = optim.Adam(
         learning_rate=lr_scheduler,
         parameters=model.parameters(),
@@ -88,7 +88,7 @@ def main():
     #     current_lr = lr_scheduler.get_lr()
     #     print(f"Step {step} 学习率: {current_lr}")
     #     lr_scheduler.step()
-    scaler = paddle.amp.GradScaler(init_loss_scaling=1024.0)
+    # scaler = paddle.amp.GradScaler(init_loss_scaling=1024.0)
 
     # 分布式训练
     if world_size > 1:
@@ -98,7 +98,7 @@ def main():
     avg_time_recorder = AverageRecorder()
     avg_loss_recorder = AverageRecorder()
 
-    for iteration in range(1000):
+    for iteration in range(100):
         st = time.time()
 
         pos = paddle.arange(enc_input.shape[1]).unsqueeze(0)
@@ -113,7 +113,7 @@ def main():
 
         # # print(f"当前梯度缩放因子: {scaler.get_loss_scale()}")
         # print(f"平均损失值: {loss.item()}")
-        scaler.scale(loss).backward()
+        loss.backward()  # scaler.scale(loss).backward()
 
 
         # for name, param in list(model.named_parameters())[:10]:
@@ -123,12 +123,12 @@ def main():
         #         print(f"参数 {name} 梯度均值: {param.grad.mean().item()}")
 
         weight_before = model.word_emb.weight.clone()
-        scaler.step(optimizer)
+        optimizer.step()  # scaler.step(optimizer)
 
         weight_after = model.word_emb.weight.clone()
-        print(f"词嵌入权重变化: {(weight_after - weight_before).abs().mean().item()}")
+        # print(f"词嵌入权重变化: {(weight_after - weight_before).abs().mean().item()}")
         
-        scaler.update()
+        # scaler.update()
 
         global_loss = loss.numpy()
         # 记录时间与损失

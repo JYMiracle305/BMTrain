@@ -70,7 +70,7 @@ def main():
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(10):
+    for iteration in range(100):
         # load data
         st = time.time()
 

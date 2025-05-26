@@ -16,8 +16,8 @@ def has_inf_nan(g_half: paddle.Tensor, out: paddle.Tensor) -> None:
         mid = mid.cuda()
     stream = paddle.device.cuda.current_stream().cuda_stream
     if g_half.dtype == paddle.float16:
-        print(f"has_inf_nan 指针 {g_half.numel().item()}, {hex(tensor_to_c_ptr(g_half))}, \
-              {hex(tensor_to_c_ptr(mid))}, {hex(tensor_to_c_ptr(out))}, {stream}")
+        # print(f"has_inf_nan 指针 {g_half.numel().item()}, {hex(tensor_to_c_ptr(g_half))}, \
+        #       {hex(tensor_to_c_ptr(mid))}, {hex(tensor_to_c_ptr(out))}, {stream}")
         C.has_nan_inf_fp16_launcher(
             g_half.numel().item(), tensor_to_c_ptr(g_half), tensor_to_c_ptr(mid), tensor_to_c_ptr(out), stream
         )

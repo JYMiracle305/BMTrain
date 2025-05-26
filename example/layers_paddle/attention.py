@@ -1,6 +1,5 @@
 from typing import Optional
 import paddle
-import paddle.nn as nn
 import paddle.nn.functional as F
 from paddle.distributed import fleet
 from paddle.distributed.fleet.layers.mpu import mp_ops
@@ -19,7 +18,7 @@ from bmtrain_paddle.global_var import config
 from bmtrain_paddle.distributed import all_gather 
 
 # class Attention(bmt.DistributedModule):
-class Attention(nn.Layer):
+class Attention(paddle.nn.Layer):
     def __init__(self, 
                  dim_model: int, 
                  dim_head: int, 
@@ -40,14 +39,10 @@ class Attention(nn.Layer):
             self.project_v = ColumnParallelLinear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype, gather_input=False)
             self.project_out = RowParallelLinear(dim_head * num_heads, dim_model, bias=bias, dtype=dtype)
         else:
-            # self.project_q = Linear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype)
-            # self.project_k = Linear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype)
-            # self.project_v = Linear(dim_model, dim_head * num_heads, bias=bias, dtype=dtype)
-            # self.project_out = Linear(dim_head * num_heads, dim_model, bias=bias, dtype=dtype)
-            self.project_q = nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
-            self.project_k = nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
-            self.project_v = nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
-            self.project_out = nn.Linear(dim_head * num_heads, dim_model, bias_attr=bias)
+            self.project_q = paddle.nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
+            self.project_k = paddle.nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
+            self.project_v = paddle.nn.Linear(dim_model, dim_head * num_heads, bias_attr=bias)
+            self.project_out = paddle.nn.Linear(dim_head * num_heads, dim_model, bias_attr=bias)
 
         self.softmax = paddle.nn.Softmax(axis=-1)
 

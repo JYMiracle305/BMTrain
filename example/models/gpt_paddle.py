@@ -58,13 +58,13 @@ class GPT_paddle(nn.Layer):
         # Transformer 层
         for i, layer in enumerate(self.transformers):
             out = layer(out, mask_2d, None)
-            print(f"After Transformer layer {i} shape:", out.shape)
+            # print(f"After Transformer layer {i} shape:", out.shape)
         
         # LayerNorm
         out = self.layernorm(out)
         try:
             logits = self.word_emb(out, projection=True)
-            print("Logits shape:", logits.shape)
+            # print("Logits shape:", logits.shape)
         except Exception as e:
             print("Error in word embedding projection:", e)
             print("Shape of out before projection:", out.shape)

@@ -30,8 +30,8 @@ class DistributedParameter(paddle.Tensor):
     _in_block: bool
     _group: Optional[str]
 
-    def __init__(
-        self,
+    def __new__(
+        cls,
         data: paddle.Tensor,
         requires_grad: bool = True,
         init_method: Optional[Callable[["DistributedParameter"], None]] = None,
@@ -43,7 +43,7 @@ class DistributedParameter(paddle.Tensor):
             raise RuntimeError("BMTrain is not initialized")
 
         # === 关键步骤1：参数分片计算 ===
-        num_of_elements = data.numel()
+        num_of_elements = data.size
         
         # cuda_tensor = paddle.tensor([], dtype=data.dtype).cuda()
         # 获取通信组信息
@@ -76,21 +76,24 @@ class DistributedParameter(paddle.Tensor):
                 local_shard[:end-start]
             )
 
+        obj = paddle.create_parameter(shape=data.shape, dtype=data.dtype,
+                    default_initializer=init_method)
+        # obj = obj.as_subclass(cls)
         # obj = local_shard.as_subclass(cls)
-        self._original_shape = tuple(data.shape)
-        self._start_partition = start
-        self._end_partition = end
-        self._init_method = init_method
-        self._group = group if not tp_mode else "tp"
-        self._tp_mode = tp_mode
-        self._zero_comm = comm
-        self._tp_split_dim = tp_split_dim
-        self._tp_original_shape = list(data.shape)
+        obj._original_shape = tuple(data.shape)
+        obj._start_partition = start
+        obj._end_partition = end
+        obj._init_method = init_method
+        obj._group = group if not tp_mode else "tp"
+        obj._tp_mode = tp_mode
+        obj._zero_comm = comm
+        obj._tp_split_dim = tp_split_dim
+        obj._tp_original_shape = list(data.shape)
         if tp_mode and tp_split_dim >= 0:
-            self._tp_original_shape[tp_split_dim] *= config["tp_size"]
-        self._tp_original_shape = tuple(self._tp_original_shape)
-            
-        # return obj
+            obj._tp_original_shape[tp_split_dim] *= config["tp_size"]
+        obj._tp_original_shape = tuple(obj._tp_original_shape)
+
+        return obj
 
     @property
     def group(self):

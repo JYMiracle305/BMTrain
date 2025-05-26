@@ -39,36 +39,36 @@ class ColumnParallelLinear(bmt.DistributedModule):
         tp_size = config["tp_size"]
         assert out_features % tp_size == 0
         self.out_features_per_partition = out_features // tp_size
-        # self.weight = bmt.DistributedParameter(
-        #     paddle.empty(
-        #         self.out_features_per_partition, in_features, dtype=dtype
-        #     ).cuda(),
-        #     init_method=paddle.nn.init.xavier_normal_,
-        #     tp_split_dim=0,
-        #     tp_mode=True,
-        # )
 
         #TODO
         world_size = config['world_size']
         # print("ColumnParallelLinear weight size", in_features, self.out_features_per_partition,
         #       in_features // world_size, self.out_features_per_partition // world_size)
         
-        self.weight = paddle.create_parameter(shape=[in_features, self.out_features_per_partition],
-            dtype=dtype,
-            default_initializer=paddle.nn.initializer.XavierNormal())
+        # self.weight = paddle.create_parameter(shape=[in_features, self.out_features_per_partition],
+        #     dtype=dtype,
+        #     default_initializer=paddle.nn.initializer.XavierNormal())
+        self.weight = bmt.DistributedParameter(
+            paddle.empty(
+                shape=[in_features, self.out_features_per_partition], dtype=dtype
+            ).cuda(),
+            init_method=paddle.nn.initializer.XavierNormal(),
+            tp_split_dim=0,
+            tp_mode=True,
+        )
         if bias:
-            # self.bias = bmt.DistributedParameter(
-            #     paddle.empty(
-            #         self.out_features_per_partition, dtype=dtype
-            #     ).cuda(),
-            #     init_method=paddle.nn.init.zeros_,
-            #     tp_split_dim=0,
-            #     tp_mode=True,
-            # )
-            self.bias = paddle.create_parameter(
-                shape=[self.out_features_per_partition], dtype=dtype,
-                default_initializer=paddle.nn.initializer.Constant(0.0)
+            self.bias = bmt.DistributedParameter(
+                paddle.empty(
+                    shape=[self.out_features_per_partition], dtype=dtype
+                ).cuda(),
+                init_method=paddle.nn.initializer.Constant(0.0),
+                tp_split_dim=0,
+                tp_mode=True,
             )
+            # self.bias = paddle.create_parameter(
+            #     shape=[self.out_features_per_partition], dtype=dtype,
+            #     default_initializer=paddle.nn.initializer.Constant(0.0)
+            # )
         else:
             self.bias = None
 
