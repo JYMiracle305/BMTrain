@@ -43,18 +43,18 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
         self.beta2 = betas[1]
         self.eps = eps
         self.weight_decay = weight_decay
-        # params = list(params)
+        #params = list(params)
 
-        print("\n2222222222222222222222222222=== 原始参数信息 ===")
-        if len(params) == 0:
-            raise ValueError("参数列表为空！请检查模型是否注册了参数")
-        for idx, param in enumerate(params):
-            print(f"参数 {idx}:")
-            print(f"  名称: {param.name}")
-            print(f"  形状: {param.shape}")
-            print(f"  数据类型: {param.dtype}")
-            print(f"  设备位置: {param.place}")
-            print(f"  是否可训练: {not param.stop_gradient}")
+        # print("\n2222222222222222222222222222=== 原始参数信息 ===")
+        # if len(params) == 0:
+        #     raise ValueError("参数列表为空！请检查模型是否注册了参数")
+        # for idx, param in enumerate(params):
+        #     print(f"参数 {idx}:")
+        #     print(f"  名称: {param.name}")
+        #     print(f"  形状: {param.shape}")
+        #     print(f"  数据类型: {param.dtype}")
+        #     print(f"  设备位置: {param.place}")
+        #     print(f"  是否可训练: {not param.stop_gradient}")
 
         parameters = [
             {
@@ -108,6 +108,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
         for group in self._param_groups:
             for p in group["params"]:
         # for p in self._param_groups:
+                # print("------p.name-------", p.name, p.grad, p.stop_gradient)
                 if p.grad is not None and not p.stop_gradient:
                     if p.grad.is_sparse():
                         raise RuntimeError(
@@ -144,11 +145,11 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                             state["_param_fp32"].copy_(p.cast(paddle.float32), True)
 
                     # update the steps for each param group update
-                    # if ("maximize" in group) and (group["maximize"] is True):
-                    #     grad = -p.grad
-                    # else:
-                    #     grad = p.grad
-                    grad = p.grad
+                    if ("maximize" in group) and (group["maximize"] is True):
+                        grad = -p.grad
+                    else:
+                        grad = p.grad
+                    # grad = p.grad
                     if p.dtype == paddle.float32:
                         other_kwargs = {}
                         if (
@@ -158,19 +159,25 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                             ).parameters
                         ):
                             other_kwargs["maximize"] = False
-                        paddle.optimizer.Adam(
-                            parameters = p,
-                            beta1=self.beta1,
-                            beta2=self.beta2,
-                            learning_rate=0.0 if state["step"] < self._hold_steps else self.lr,
-                            weight_decay=self.weight_decay,
-                            epsilon=self.eps
-                        )
+                        if "adam_opt" not in state:
+                            print(f"参数 p 的名称: {p.name}")
+                            print(f"参数 p 的形状: {p.shape}")
+                            print(f"参数 p 的维度: {p.ndim}")
+                            state["adam_opt"] = paddle.optimizer.Adam(
+                                parameters = [p],
+                                beta1=self.beta1,
+                                beta2=self.beta2,
+                                learning_rate=0.0 if state["step"] < self._hold_steps else self.lr,
+                                weight_decay=self.weight_decay,
+                                epsilon=self.eps
+                            )
+                        state["adam_opt"].step()
+                        state["adam_opt"].clear_grad()
                         state["step"] += 1
                     else:
                         f = F.adam_fp16 if p.dtype == paddle.float16 else F.adam_bf16
                         state["step"] += 1
-
+                        # print("------f(.......)-------")
                         # print("判断参数是否符合预期", state["_param_fp32"].is_contiguous(),
                         #       state["_param_fp32"].place.is_gpu_place(), paddle.CUDAPlace)
                         # print("state['_param_fp32']", state["_param_fp32"].numel(), int(state["_param_fp32"].numel().item()))
@@ -188,7 +195,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                             self.weight_decay,
                             state["step"],
                         )
-
+        print("adam step ok----------")
         return loss
 
     def get_avg_delta():

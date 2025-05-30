@@ -29,28 +29,36 @@ class Embedding(bmt.DistributedModule):
         self.max_norm = max_norm
         self.norm_type = norm_type
         self.scale_grad_by_freq = scale_grad_by_freq
-        if _weight is None:
-            self.weight = bmt.DistributedParameter(paddle.empty([num_embeddings, embedding_dim], dtype=dtype).cuda())
-        else:
-            self.weight = bmt.DistributedParameter(_weight)
         # if _weight is None:
-        #     # print("if _weight is None:", num_embeddings, embedding_dim)
-        #     dtype=dtype if dtype else paddle.get_default_dtype()
-        #     # print("embedding weight dtype", dtype)
-        #     self.weight = self.create_parameter(
-        #         shape=[num_embeddings, embedding_dim],
-        #         dtype=dtype if dtype else paddle.get_default_dtype(),
-        #         default_initializer=paddle.nn.initializer.XavierNormal()
-        #     )
+        #     self.weight = bmt.DistributedParameter(paddle.empty([num_embeddings, embedding_dim], dtype=dtype).cuda())
         # else:
-        #     self.weight = self.create_parameter(
-        #         shape=_weight.shape,
-        #         dtype=_weight.dtype,
-        #         default_initializer=paddle.nn.initializer.Assign(_weight)
-        #     )
-        # print("-------------Embedding-----------", self.weight.shape)
+        #     self.weight = bmt.DistributedParameter(_weight)
+        if _weight is None:
+            # print("if _weight is None:", num_embeddings, embedding_dim)
+            # dtype=dtype if dtype else paddle.get_default_dtype()
+            # print("embedding weight dtype", dtype)
+            self.weight = self.create_parameter(
+                shape=[embedding_dim, num_embeddings],
+                dtype=dtype if dtype else paddle.get_default_dtype(),
+                default_initializer=paddle.nn.initializer.XavierNormal()
+            )
+        else:
+            self.weight = self.create_parameter(
+                shape=_weight.shape,
+                dtype=_weight.dtype,
+                default_initializer=paddle.nn.initializer.Assign(_weight)
+            )
+        # print("-------------Embedding----------- 是否连续", self.weight.is_contiguous(), self.weight.dtype)
         self.sparse = sparse
         # print("sparse-----------", sparse)
+        self._add_grad_hook()
+        
+    def _add_grad_hook(self):
+        def grad_hook(grad):
+            if not grad.is_contiguous():
+                grad = grad.contiguous()
+            return grad
+        self.weight.register_hook(grad_hook)
 
     @classmethod
     def from_pretrained(cls, embeddings, freeze=True, padding_idx=None,
@@ -82,15 +90,19 @@ class Embedding(bmt.DistributedModule):
             #     self.norm_type, self.scale_grad_by_freq, self.sparse
             # )
             # print(f"not projection Embedding input:{input.shape}, self.weight:{self.weight.shape}")
+            # print("input 的数据类型:", input.dtype, input)  # 应为 int64 或 int32
+            # print("self.weight 的shape:", self.weight.shape)
             out = F.embedding(
-                input, self.weight, self.padding_idx, self.sparse
+                input, self.weight.t(), self.padding_idx, self.sparse
             )
-            # print("!!!!!!!!!!!!!!!Embedding", out.shape)
+            print("out 的shape:", out.shape)
             return out
         else:
             #需要确保 input 的最后一个维度与 self.weight 的第一个维度一致
-            # print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
-            out = F.linear(input, self.weight.T)
+            out = F.linear(input, self.weight)
+            # print(f"!!!!!!!!!!!!!Embedding input:{input}, self.weight:{self.weight}, {self.weight.name}")
+            # out = F.linear(input, self.weight)
+            # print(f"!!!!!!!!!!!!!Embedding out: {out}")
             return out
 
     def extra_repr(self) -> str:

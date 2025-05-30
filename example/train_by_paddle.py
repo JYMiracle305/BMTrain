@@ -98,7 +98,7 @@ def main():
     avg_time_recorder = AverageRecorder()
     avg_loss_recorder = AverageRecorder()
 
-    for iteration in range(100):
+    for iteration in range(1):
         st = time.time()
 
         pos = paddle.arange(enc_input.shape[1]).unsqueeze(0)

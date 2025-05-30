@@ -8,7 +8,7 @@ CHECK_INPUT = lambda x: x.is_contiguous() and x.place.is_gpu_place()
 
 def has_inf_nan(g_half: paddle.Tensor, out: paddle.Tensor) -> None:
     assert out.dtype == paddle.uint8, "out must be a uint8 tensor"
-    # print("g_half.place, out.place :::", g_half.place, out.place)
+    # print("g_half.place, out.place :::", g_half.name, g_half.is_contiguous(), g_half.place)
     assert CHECK_INPUT(g_half), "g_fp16 must be contiguous and on cuda"
     assert CHECK_INPUT(out), "out must be contiguous and on cuda"
     mid = paddle.zeros(1024, dtype=out.dtype)

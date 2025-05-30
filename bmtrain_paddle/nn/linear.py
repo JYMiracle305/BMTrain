@@ -12,21 +12,27 @@ class OpLinear(paddle.autograd.PyLayer):
 
     @staticmethod
     def backward(ctx, grad_output):
-        # print("~~~~~~~~~OpLinear grad_output~~~~~~~~~~~~", grad_output)
         saved_tensors = ctx.saved_tensor()
         x, weight, bias = ctx.saved_tensor()
         grad_x = grad_weight = grad_bias = None
-        # if x.requires_grad:
-        # print(f"backward grad_output {grad_output.shape} weight {weight.shape}")
-        grad_x = grad_output.matmul(weight.T)
-        # if weight.requires_grad:
-        dim = grad_output.dim()
+        if not x.stop_gradient:
+            grad_x = grad_output.matmul(weight.T)
+            # grad_x = grad_output.matmul(weight.T)
+        if not weight.stop_gradient:
+            dim = grad_output.dim()
 
+        # grad_weight = (
+        #     grad_output.reshape([-1, grad_output.shape[-1]])
+        #     .t()
+        #     .matmul(x.reshape([-1, x.shape[-1]]))
+        # )
         grad_weight = (
-            grad_output.reshape([-1, grad_output.shape[-1]])
+            x.reshape([-1, x.shape[-1]])
             .t()
-            .matmul(x.reshape([-1, x.shape[-1]]))
+            .matmul(grad_output.reshape([-1, grad_output.shape[-1]]))
         )
+        # print(f"-----------------OpLinear backward------------------------ {grad_output.shape} {x.shape}")
+        # print(f"------------------- {grad_output.reshape([-1, grad_output.shape[-1]]).t()}")
         if bias is not None:
             #  and bias.requires_grad
             grad_bias = grad_output.reshape([-1, grad_output.shape[-1]]).sum(0)
@@ -55,6 +61,7 @@ class Linear(bmt.DistributedModule):
             )
         else:
             self.bias = paddle.create_parameter(shape=[0], dtype=dtype)
+        # print("------------------- Linear-------------------------", self.weight, self.bias)
     def forward(self, input):
         return OpLinear.apply(input, self.weight, self.bias)
 

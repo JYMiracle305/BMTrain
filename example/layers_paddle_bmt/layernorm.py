@@ -22,15 +22,16 @@ class Layernorm(bmt.DistributedModule):
         self.elementwise_affine = elementwise_affine
         world_size = config["world_size"] 
         if self.elementwise_affine:
-            self.weight = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
-            print("--------------------self.weight----------------", self.weight.shape)
-            self.bias = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
-            print("--------------------self.bias----------------", self.bias.shape)
+            # self.weight = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
+            # print("--------------------self.weight----------------", self.weight.shape)
+            # self.bias = bmt.DistributedParameter(paddle.empty(self.normalized_shape, dtype=dtype).cuda())
+            # print("--------------------self.bias----------------", self.bias.shape)
             print("------------Layernorm-------------", self.normalized_shape)
-            # self.weight = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
-            #         default_initializer=paddle.nn.initializer.XavierNormal())
-            # self.bias = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
-            #         default_initializer=paddle.nn.initializer.Constant(0.0))
+            self.weight = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
+                    default_initializer=paddle.nn.initializer.XavierNormal())
+            print("------------------", self.weight.shape)
+            self.bias = self.create_parameter(shape=self.normalized_shape, dtype=dtype,
+                    default_initializer=paddle.nn.initializer.Constant(0.0))
         else:
             self.weight = None
             self.bias = None

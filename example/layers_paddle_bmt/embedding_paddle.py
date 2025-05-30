@@ -77,7 +77,8 @@ class Embedding(nn.Layer):
         else:
             #需要确保 input 的最后一个维度与 self.weight 的第一个维度一致
             # print(f"Embedding input:{input.shape}, self.weight:{self.weight.shape}")
-            out = F.linear(input, self.weight.T)
+            # out = F.linear(input, self.weight.T)
+            out = F.linear(input, self.weight)
             return out
 
     def extra_repr(self) -> str:

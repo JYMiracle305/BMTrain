@@ -36,16 +36,16 @@ class VPEmbedding(bmt.DistributedModule):
         self.vocab_size_per_partition = vocab_size // bmt.config["tp_size"]
         self.start_index = bmt.config["tp_rank"] * self.vocab_size_per_partition
         self.end_index = (bmt.config["tp_rank"] + 1) * self.vocab_size_per_partition
-        self.weight = bmt.DistributedParameter(
-            paddle.empty(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype),
-            init_method=paddle.nn.initializer.XavierNormal(),
-            tp_split_dim=0,
-            tp_mode=True,
-        )
+        # self.weight = bmt.DistributedParameter(
+        #     paddle.empty(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype),
+        #     init_method=paddle.nn.initializer.XavierNormal(),
+        #     tp_split_dim=0,
+        #     tp_mode=True,
+        # )
         print("-------------------------embedding_size, self.vocab_size_per_partition",
               embedding_size, self.vocab_size_per_partition)
-        # self.weight = paddle.create_parameter(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype,
-        #     default_initializer=paddle.nn.initializer.XavierNormal())
+        self.weight = paddle.create_parameter(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype,
+            default_initializer=paddle.nn.initializer.XavierNormal())
 
     def forward(self, x: paddle.Tensor, projection=False):
         if not projection:

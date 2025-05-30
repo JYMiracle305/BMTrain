@@ -71,9 +71,14 @@ class Embedding(paddle.nn.Layer):
             #     input, self.weight, self.padding_idx, self.max_norm,
             #     self.norm_type, self.scale_grad_by_freq, self.sparse
             # )
+            print("-----------------layers paddle without bmtrain -------------------")
+            print("计算前梯度状态:", paddle.is_grad_enabled())
+            print("input 的数据类型:", input.dtype, input, self.weight)  # 应为 int64 或 int32
+            print("input 的梯度状态:", input.stop_gradient)
             out = F.embedding(
                 input, self.weight, self.padding_idx, self.sparse
             )
+            print("out 的梯度状态:", out)
             return out
         else:
             #需要确保 input 的最后一个维度与 self.weight 的第一个维度一致

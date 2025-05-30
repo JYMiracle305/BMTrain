@@ -1,0 +1,14 @@
+python -m paddle.distributed.launch --gpus=2,3 ./train_by_paddle_multi.py
+
+
+# 创建容器
+docker run -it --name bmtrain_paddle --gpus all --ulimit memlock=-1 --ulimit stack=67108864 -v $HOME/:$HOME nvcr.io/nvidia/pytorch:25.03-py3
+
+# ​提交容器修改为镜像：
+docker commit 4ce78d55f2fd bmtrain_paddle:24.04-py3
+
+# 打包镜像成tar
+docker save bmtrain_paddle:custom | gzip > /home/wanghaojie/jiyiming/bmtrain_paddle.tar.gz
+
+# 加载镜像
+docker load -i bmtrain_paddle.tar --name bmtrain_paddle:custom

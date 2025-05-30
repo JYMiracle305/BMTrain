@@ -12,7 +12,8 @@ def check_overflow(param_groups):
     for group in param_groups:
         for p in group['params']:
             if p.grad is not None:
-                if p.dtype != 'float':
+                if p.dtype != paddle.float32:
+                    # print("------check_overflow parameter name:--------", p.name)
                     has_inf_nan(p.grad, has_inf_or_nan)
     if "comm" in config:
         nccl.allReduce(has_inf_or_nan, has_inf_or_nan, "max", config["comm"])
@@ -100,6 +101,8 @@ class OptimManager:
             loss (torch.Tensor): loss
         """
         loss = self.scale_loss(loss)
+        loss.stop_gradient = False
+        print("--------------loss backward--------------", loss)
         loss.backward()
         # some reduce ops of distributed parameter were launched on load stream
         current_stream = paddle.device.cuda.current_stream()
@@ -167,13 +170,16 @@ class OptimManager:
                 return
         for optimizer, lr_scheduler in zip(self.optimizers, self.lr_schedulers):
             if hasattr(optimizer, "_bmtrain_optimizer") and optimizer._bmtrain_optimizer:
+                print("optimizer.step(scale=self.loss_scale)")
                 optimizer.step(scale=self.loss_scale)
             else:
                 if self.loss_scale_enabled:
                     grad_rescale(optimizer._param_groups, self.loss_scale)
+                print("optimizer.step()")
                 optimizer.step()
 
             if lr_scheduler is not None:
+                print("---------lr_scheduler.step()-----")
                 lr_scheduler.step()
 
         if self.loss_scale_enabled:

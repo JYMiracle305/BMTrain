@@ -71,10 +71,13 @@ class GPT_paddle_bmt(bmt.DistributedModule):
             pos = paddle.split(pos, num_or_sections=config["tp_size"], axis=1)[config["tp_rank"]]
 
         # print("before  out = self.pos_emb(pos) + self.word_emb(input)")
-        # print("input", input.shape, input)
+        # print("before self.pos_emb(pos) + self.word_emb(input)", input.shape, input)
         # 嵌入层
-        out = self.pos_emb(pos) + self.word_emb(input)
-        # print("After adding position and word embeddings shape:", out.shape, out)
+        out1 = self.pos_emb(pos)
+        out2 = self.word_emb(input)
+        # print("After adding position and word embeddings shape:", out1.shape, out2.shape)
+        out = out1 + out2
+        # print("After adding position and word embeddings shape:", out.shape, out1, out2, out)
 
         # out = self.transformers(out, mask_2d, None)
         for i, layer in enumerate(self.transformers):

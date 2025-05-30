@@ -39,28 +39,28 @@ class RowParallelLinear(bmt.DistributedModule):
         tp_size = config["tp_size"]
         assert in_features % tp_size == 0
         self.in_features_per_partition = in_features // tp_size
-        self.weight = bmt.DistributedParameter(
-            paddle.empty(
-                shape=[self.in_features_per_partition, self.out_features],
-                dtype=dtype,
-            ).cuda(),
-            init_method=paddle.nn.initializer.XavierNormal(),
-            tp_split_dim=1,
-            tp_mode=True,
-        )
-        # self.weight = paddle.create_parameter(shape=[self.in_features_per_partition, self.out_features], dtype=dtype,
-        #     default_initializer=paddle.nn.initializer.XavierNormal())
+        # self.weight = bmt.DistributedParameter(
+        #     paddle.empty(
+        #         shape=[self.in_features_per_partition, self.out_features],
+        #         dtype=dtype,
+        #     ).cuda(),
+        #     init_method=paddle.nn.initializer.XavierNormal(),
+        #     tp_split_dim=1,
+        #     tp_mode=True,
+        # )
+        self.weight = paddle.create_parameter(shape=[ self.in_features_per_partition, self.out_features], dtype=dtype,
+            default_initializer=paddle.nn.initializer.XavierNormal())
         if bias:
-            self.bias = bmt.DistributedParameter(
-                paddle.empty(shape=[self.out_features], dtype=dtype).cuda(),
-                init_method=paddle.nn.initializer.Constant(0.0),
-                tp_split_dim=-1,
-                tp_mode=True,
-            )
-            # self.bias = paddle.create_parameter(
-            #     shape=[self.out_features], dtype=dtype,
-            #     default_initializer=paddle.nn.initializer.Constant(0.0)
+            # self.bias = bmt.DistributedParameter(
+            #     paddle.empty(shape=[self.out_features], dtype=dtype).cuda(),
+            #     init_method=paddle.nn.initializer.Constant(0.0),
+            #     tp_split_dim=-1,
+            #     tp_mode=True,
             # )
+            self.bias = paddle.create_parameter(
+                shape=[self.out_features], dtype=dtype,
+                default_initializer=paddle.nn.initializer.Constant(0.0)
+            )
         else:
             self.register_parameter("bias", None)
 

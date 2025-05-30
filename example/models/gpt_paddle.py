@@ -54,14 +54,15 @@ class GPT_paddle(nn.Layer):
 
         # embeding层
         out = self.pos_emb(pos) + self.word_emb(input)
-
+        print(f"After self.pos_emb(pos) + self.word_emb(input):", out)
         # Transformer 层
         for i, layer in enumerate(self.transformers):
             out = layer(out, mask_2d, None)
             # print(f"After Transformer layer {i} shape:", out.shape)
-        
+        print(f"After Transformer layer shape:", out)
         # LayerNorm
         out = self.layernorm(out)
+        print(f"self.layernorm(out):", out)
         try:
             logits = self.word_emb(out, projection=True)
             # print("Logits shape:", logits.shape)
@@ -70,7 +71,7 @@ class GPT_paddle(nn.Layer):
             print("Shape of out before projection:", out.shape)
         # 词嵌入投影
         logits = self.word_emb(out, projection=True)
-        # print("after self.word_emb")
+        print("after self.word_emb", logits)
 
         # 记录 logits（用于调试或检查）
         # print("Logits:", logits)

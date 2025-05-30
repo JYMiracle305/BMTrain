@@ -21,8 +21,9 @@ class FileStore:
         # 唯一路径隔离不同训练任务
         self.base_path = f"./tmp/{prefix}_{os.getenv('MASTER_ADDR')}_{os.getenv('MASTER_PORT')}"
 
-        # if dist.get_rank() == 0:
-        #     self._cleanup_old_directory()
+        if dist.get_rank() == 0:
+            if os.path.exists("./tmp"):
+                shutil.rmtree("./tmp")
 
         # 清理旧目录并创建新目录
         if not os.path.exists(self.base_path):
@@ -51,7 +52,7 @@ class FileStore:
         
         os.rename(tmp_path, file_path)  # Unix 原子操作
 
-    def get(self, key: str, retries=30, interval=0.1) -> str:
+    def get(self, key: str, retries=30, interval=0.3) -> str:
         """安全读取键值，支持重试避免竞争"""
         file_path = os.path.join(self.base_path, key)
         print("FileStore get", file_path)
@@ -151,8 +152,7 @@ def init_distributed(
         "save_param_to_cpu": True,
     })
 
-    if os.path.exists("./tmp"):
-        shutil.rmtree("./tmp")
+    
     # 自定义store初始化
     store = FileStore()
 

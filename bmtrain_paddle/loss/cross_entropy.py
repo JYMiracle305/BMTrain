@@ -30,7 +30,7 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
         
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
-        # print(f"~~~~~~~~~~~~~~~~OpFusedCrossEntropy grad_output~~~~~~~~~~~~~~~~~~~~~~~ {grad_output}")
+        print(f"~~~~~~~~~~~~~~~~OpFusedCrossEntropy grad_output~~~~~~~~~~~~~~~~~~~~~~~ {grad_output}")
         grad_output = grad_output.contiguous()
         softmax, target = ctx.saved_tensor()
         F.cross_entropy_backward_inplace(

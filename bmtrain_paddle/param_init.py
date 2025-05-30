@@ -69,7 +69,6 @@ def init_parameters(model: paddle.nn.Layer):
 
     modules = model.named_sublayers(include_self=True)
     for module_prefix, module in modules:
-        print("<<<<<<<<<<<<<<----------------init_parameters------------>>>>>>>>>")
         if isinstance(module, Block):
             module.init_parameters()
         else:
