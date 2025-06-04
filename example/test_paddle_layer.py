@@ -42,19 +42,19 @@ class MyCustomLayer(paddle.autograd.PyLayer):
         #     grad_bias = grad_output.sum(axis=0)
 
         # 返回 8 个梯度会报错
-        # return grad_input, grad_weight, grad_bias, None, None, None, None, None
-        # 返回 2 个梯度 OK
-        return grad_input, grad_weight, grad_bias, None, None, None, None, None
+        # return (grad_input, grad_weight, grad_bias, None, None, None, None, None)
+        # 返回 3 个梯度 OK
+        return (grad_input, grad_weight, grad_bias)
 
 input_data = paddle.randn([2, 3], dtype='float32')  # 形状 [batch_size, in_features]
 input_data.stop_gradient = False
 weight = paddle.randn([3, 4], dtype='float32')      # 形状 [in_features, out_features]
 weight.stop_gradient = False
-bias = paddle.zeros([4], dtype='float32')
-bias.stop_gradient = False
+# bias = paddle.zeros([4], dtype='float32')
+# bias.stop_gradient = True
 
 # 前向传播
-output = MyCustomLayer.apply(input_data, weight, bias, True, False, False, None, 10)
+output = MyCustomLayer.apply(input_data, weight, None, True, False, False, None, 10)
 
 # 计算损失
 loss = output.sum()

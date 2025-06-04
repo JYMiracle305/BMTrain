@@ -1,3 +1,5 @@
+#!/bin/bash
+
 # export NCCL_HOME=/home/spack/spack/opt/spack/linux-ubuntu22.04-icelake/gcc-11.4.0/nccl-2.18.3-1-glfr3mzrcsf2ginrtjsgvmluxlcknko5
 # export NCCL_DEBUG=INFO
 # export NCCL_DEBUG_FILE=./nccl_debug_%h_%p.log
@@ -10,6 +12,9 @@
 #        --pipe_size 2 \
 #        --tp_size 2
 #export CUDA_VISIBLE_DEVICES=2
+
+pkill -f 'python train_by_paddle_multi.py'
+
 export NCCL_HOME=/home/spack/spack/opt/spack/linux-ubuntu22.04-icelake/gcc-11.4.0/nccl-2.18.3-1-glfr3mzrcsf2ginrtjsgvmluxlcknko5
 export NCCL_DEBUG=INFO
 export NCCL_DEBUG_FILE=./nccl_debug_%h_%p.log
@@ -18,4 +23,4 @@ export CUDA_LAUNCH_BLOCKING=1
 export LD_LIBRARY_PATH=$NCCL_HOME/lib:$LD_LIBRARY_PATH
 python -m paddle.distributed.launch \
        --gpus=8,9 \
-      ./train_by_paddle_multi.py
+      /home/jiyiming/code/BMTrain_jym/example/train_by_paddle_multi.py

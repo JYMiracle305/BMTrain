@@ -70,7 +70,7 @@ def main():
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(100):
+    for iteration in range(1):
         # load data
         st = time.time()
 
@@ -84,6 +84,7 @@ def main():
             batch, seq_len, vocab_out_size = logits.size()
 
             if config['tp_size'] > 1:
+                print("------------logits dtype--------------", logits)
                 loss = loss_func(logits.view(batch * seq_len, vocab_out_size), targets.view(batch * seq_len))
             else:
                 loss = loss_func(logits.float().view(batch * seq_len, vocab_out_size), targets.view(batch * seq_len))

@@ -243,7 +243,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         # print(f"OpParallelLinear.forward 参数数量: {num_args}") 
         if reduce_output_type is not None:
             reduce_output_type = ReduceType(reduce_output_type)
-        # print("OpParallelLinear forward", input.shape, weight.shape, bias)
+        # print("OpParallelLinear forward", input, weight, bias)
         ctx.save_for_backward(input, weight, bias)
         ctx.gather_output = gather_output
         ctx.split_input = split_input
@@ -288,7 +288,7 @@ class OpParallelLinear(paddle.autograd.PyLayer):
     def backward(ctx, grad_output):
         input, weight, bias = ctx.saved_tensor()
         gather_output = ctx.gather_output
-        # print("~~~~~~~~~~~~~~~OpParallelLinear backward----------", grad_output, input, weight, bias)
+        print("-----------------OpParallelLinear backward ctx.saved_tensor()------------", input, weight, bias)
         if ctx.reduce_output_type == ReduceType.REDUCE_SCATTER:
             # print("———————--------OpParallelLinear backward------------———————1",
             #       input.stop_gradient, weight.stop_gradient)
@@ -298,7 +298,8 @@ class OpParallelLinear(paddle.autograd.PyLayer):
                         grad_output, input, weight, bias, ctx.async_gather_chunks
                     )
                 )
-                return grad_input, grad_weight, grad_bias, None, None, None, None, None
+                # return grad_input, grad_weight, grad_bias, None, None, None, None, None
+                return (grad_input, grad_weight, grad_bias)
             else:
                 grad_output = all_gather(grad_output, config["tp_comm"])
                 grad_output = grad_output.flatten(0, 1)
@@ -389,10 +390,98 @@ class OpParallelLinear(paddle.autograd.PyLayer):
         # print("------------OpParallelLinear return",
         #       grad_input, grad_weight, grad_bias, None, None, None, None, None)
         # return grad_input, grad_weight, grad_bias, None, None, None, None, None
-        print("OpParallelLinear return---------------- 标志")
+        print("OpParallelLinear return---------------- forward保存的内容", input, weight, bias)
+
+        print("OpParallelLinear return---------------- 计算出来的梯度", grad_input, grad_weight, grad_bias)
+        returns = []
+        if not input.stop_gradient:
+            returns.append(grad_input)
+        if not weight.stop_gradient:
+            returns.append(grad_weight)
+        if (not bias is None) and (not bias.stop_gradient):
+            returns.append(grad_bias)
+        
+        return tuple(returns)
+        # if bias is not None and not bias.stop_gradient:
+        #     print("[Backward] 返回3个梯度 (input, weight, bias)")
+        #     return grad_input, grad_weight, grad_bias
+        # else:
+        #     print("[Backward] 返回2个梯度 (input, weight)")
+        #     return (grad_input, grad_weight)
+    @staticmethod
+    def backward_new(ctx, grad_output):
+        print(f"[Backward] 开始，梯度输出形状: {grad_output.shape}")
+        
+        # 获取前向保存的输入
+        input, weight, bias = ctx.saved_tensor()
+        print(f"[保存张量] 输入形状: {input.shape if input is not None else None}")
+        print(f"[保存张量] 权重形状: {weight.shape}")
+        print(f"[保存张量] 偏置: {'存在' if bias is not None else '无'}")
+        
+        # 梯度初始化
+        grad_input = None
+        grad_weight = None
+        grad_bias = None
+        
+        # 仅处理需要梯度的参数
+        if not input.stop_gradient:
+            print("[计算输入梯度] 开始...")
+            # 简化: 直接使用矩阵乘法计算输入梯度
+            try:
+                print(f"[输入梯度] 计算开始, 形状: {grad_output.shape}, {weight.shape} ")
+                grad_input = grad_output @ weight.T
+                print(f"[输入梯度] 计算完成, 形状: {grad_input.shape}, 范数: {paddle.linalg.norm(grad_input).item():.4f}")
+            except Exception as e:
+                print(f"[输入梯度] 计算失败: {e}")
+        
+        if not weight.stop_gradient:
+            print("[计算权重梯度] 开始...")
+            try:
+                # 简化: 直接使用矩阵乘法计算权重梯度
+                grad_weight = grad_output.reshape([-1, grad_output.shape[-1]]).t() @ input.reshape([-1, input.shape[-1]])
+                print(f"[权重梯度] 计算完成, 形状: {grad_weight.shape}, 范数: {paddle.linalg.norm(grad_weight).item():.4f}")
+            except Exception as e:
+                print(f"[权重梯度] 计算失败: {e}")
+        
         if bias is not None and not bias.stop_gradient:
-            print("[Backward] 返回3个梯度 (input, weight, bias)")
+            print("[计算偏置梯度] 开始...")
+            try:
+                # 简化: 直接沿批量维度求和
+                grad_bias = grad_output.reshape([-1, grad_output.shape[-1]]).sum(0)
+                print(f"[偏置梯度] 计算完成, 形状: {grad_bias.shape}, 范数: {paddle.linalg.norm(grad_bias).item():.4f}")
+            except Exception as e:
+                print(f"[偏置梯度] 计算失败: {e}")
+        
+        # 同步CUDA流确保计算完成
+        paddle.device.cuda.synchronize()
+        print("[Backward] 所有梯度计算完成，准备返回")
+        
+        # 调试信息: 检查梯度值范围
+        self_check = []
+        if grad_input is not None:
+            self_check.append(("grad_input", grad_input))
+        if grad_weight is not None:
+            self_check.append(("grad_weight", grad_weight))
+        if grad_bias is not None:
+            self_check.append(("grad_bias", grad_bias))
+        
+        for name, grad in self_check:
+            if grad is None:
+                continue
+            min_val = grad.min().item()
+            max_val = grad.max().item()
+            mean_val = grad.mean().item()
+            print(f"[梯度检查] {name}: min={min_val:.6f}, max={max_val:.6f}, mean={mean_val:.6f}")
+            
+            # 检查NaN/Inf
+            if paddle.isnan(grad).any():
+                print(f"!! 警告: {name} 包含NaN值")
+            if paddle.isinf(grad).any():
+                print(f"!! 警告: {name} 包含Inf值")
+        
+        # 返回简化结果
+        print("[Backward] 返回梯度")
+        if bias is not None:
             return grad_input, grad_weight, grad_bias
         else:
-            print("[Backward] 返回2个梯度 (input, weight)", input.stop_gradient, weight.stop_gradient)
             return grad_input, grad_weight

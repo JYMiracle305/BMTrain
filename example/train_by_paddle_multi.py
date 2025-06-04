@@ -12,7 +12,7 @@ from bmtrain_paddle import inspect
 def main():
     bmt.init_distributed(
         seed=0,
-        tp_size=1,
+        tp_size=2,
     )
 
     model = GPT(
@@ -61,8 +61,7 @@ def main():
             break
     
     if config['tp_size'] > 1:
-        # loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100, parallel=True)
-        loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100)
+        loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100, parallel=True)
     else:
         loss_func = paddle.nn.CrossEntropyLoss(ignore_index=-100)
     # print(f"model.parameters() {model.parameters()}")
@@ -85,8 +84,6 @@ def main():
 
         with inspect.inspect_tensor() as inspector:
             pos = paddle.arange(enc_input.shape[1], dtype=paddle.int64).unsqueeze(0).cuda().tile([enc_input.shape[0], 1])
-            enc_input.stop_gradient = False
-            pos.stop_gradient = False
             # print("输入形状", enc_input, pos)
             # print("all-------------------------计算前梯度状态:", paddle.is_grad_enabled())
             logits = model(
@@ -94,10 +91,14 @@ def main():
                 pos,
                 pos < enc_length[:, None]
             )
-            # print("Logits 形状:", logits.shape, logits)
+            print("Logits 形状:", logits.shape)
             batch, seq_len, vocab_out_size = logits.shape
 
             # print(f"Iter {iteration} 当前学习率: {optimizer.get_lr()}")
+
+            print("--------标签最大值:------", paddle.max(targets).item())
+            print("--------标签最小值:------", paddle.min(targets).item())
+            print("logits 形状为", batch * seq_len, vocab_out_size)
 
             if config['tp_size'] > 1:
                 loss = loss_func(logits.reshape([batch * seq_len, vocab_out_size]), targets.reshape([batch * seq_len]))

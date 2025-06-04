@@ -258,13 +258,16 @@ class FusedCrossEntropy(paddle.nn.Layer):
 
     def forward(self, input: paddle.Tensor, target: paddle.Tensor) -> paddle.Tensor:
         if self.parallel:
-            # print("-----------------------FusedCrossEntropy input", input)
+            print("-----------------------FusedCrossEntropy self.parallel input", input)
             ret = VPFusedCrossEntropy.apply(input, target.astype(paddle.int64))
         else:
             if input.dtype == paddle.float32:
+                print("标签最大值:", paddle.max(target).item())
+                print("标签最小值:", paddle.min(target).item())
                 return paddle.nn.functional.cross_entropy(
                         input, 
-                        target.astype(paddle.int64),
+                        # target.astype(paddle.int64),
+                        target,
                         weight=self.weight, 
                         ignore_index=self.ignore_index, 
                         reduction=self.reduction,

@@ -229,6 +229,7 @@ class FusedCrossEntropy(torch.nn.Module):
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.parallel:
+            print("---------------VPFusedCrossEntropy.apply--------------", input)
             ret = VPFusedCrossEntropy.apply(input, target.long())
         else:
             if input.dtype == torch.float32:
