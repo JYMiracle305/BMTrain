@@ -1,0 +1,4 @@
+torch==2.2.0+cu118
+numpy==1.24.0
+cupy==13.4.1
+paddlepaddle==2.6.2
