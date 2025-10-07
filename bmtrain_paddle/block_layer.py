@@ -11,32 +11,18 @@ import inspect
 from paddle.distributed.fleet.utils import recompute
 
 
-def storage_type_cuda(storage_type):
-    """将 PyTorch 的存储类型映射到 Paddle 的 dtype 和 GPU 设备"""
-    TYPE_MAP = {
-        # 映射 PyTorch Storage 类型到 Paddle dtype
-        "torch.FloatStorage": "float32",
-        "torch.DoubleStorage": "float64",
-        "torch.HalfStorage": "float16",
-        "torch.BFloat16Storage": "bfloat16",
-        "torch.CharStorage": "int8",
-        "torch.ByteStorage": "uint8",
-        "torch.ShortStorage": "int16",
-        "torch.IntStorage": "int32",
-    }
-    
-    # 获取 PyTorch 存储类型名称
-    type_name = str(storage_type).split("'")[1]
-    
-    if type_name not in TYPE_MAP:
-        raise ValueError(f"Unsupported storage type: {type_name}")
+def storage_type_cuda(dtype, dplace):
 
-    # 返回创建 GPU 张量的函数
     def create_gpu_tensor(shape):
-        return paddle.zeros(
+        t_data = paddle.zeros(
             shape=shape,
-            dtype=TYPE_MAP[type_name],
-            place=paddle.CUDAPlace(0)  # 默认使用第一个 GPU,TODO
+            dtype=dtype
+        )
+
+        return paddle.to_tensor(
+            data=t_data,
+            dtype=dtype,
+            place=dplace,
         )
     
     return create_gpu_tensor
@@ -47,7 +33,7 @@ def _get_param_kw(param: DistributedParameter):
     type_name = str(param.dtype).split(".")[-1]
     grad_name = "_grad" if not param.stop_gradient else "_nograd"
     group_name = ""
-    if param.group is not None:
+    if param._group is not None:
         group_name = "_g_" + param.group
     return type_name + grad_name + group_name
 
@@ -128,7 +114,7 @@ class Block(paddle.nn.Layer):
             #         f"All parameters in checkpoint block must be DistributedParameter. {param.type}"
             #     )
 
-            # storage_type = storage_type_cuda(param.storage_type())
+            storage_type = [param.dtype, param.place]
             kw_name = _get_param_kw(param)
 
             if kw_name not in self._storage_info:
@@ -181,7 +167,7 @@ class Block(paddle.nn.Layer):
 
             # bind storage to buffer tensor
             storage_param = paddle.Tensor(
-                paddle.Tensor([], dtype=dtype, device=device).set_(storage_param_buffer)
+                paddle.Tensor([], dtype=dtype, device=device)
             )
             if val["requires_grad"]:
                 storage_param.requires_grad_(True)

@@ -123,18 +123,18 @@ class AdamOffloadOptimizer(paddle.optimizer.Optimizer):
             for p in group["params"]:
                 if p.grad is not None and not p.stop_gradient:
                     # ========== 新增：打印梯度信息 ==========
-                    print(f"\n[Optimizer] 检查参数: {p.name}")
-                    print(f"  - 形状: {p.shape}")
-                    print(f"  - 数据类型: {p.dtype}")
-                    print(f"  - 梯度是否稀疏: {p.grad.is_sparse()}")
+                    # print(f"\n[Optimizer] 检查参数: {p.name}")
+                    # print(f"  - 形状: {p.shape}")
+                    # print(f"  - 数据类型: {p.dtype}")
+                    # print(f"  - 梯度是否稀疏: {p.grad.is_sparse()}")
                     # =====================================
                     if p.grad.is_sparse():
                          # ========== 增强错误信息 ==========
-                        print(f"❌ 检测到稀疏梯度的参数详细信息:")
-                        print(f"   参数名称: {p.name}")
-                        print(f"   参数形状: {p.shape}")
-                        print(f"   所属层类型: {p.__class__.__name__}")
-                        print(f"   关联的网络层可能为: {'Embedding' if 'embedding' in p.name.lower() else '其他层'}")
+                        # print(f"❌ 检测到稀疏梯度的参数详细信息:")
+                        # print(f"   参数名称: {p.name}")
+                        # print(f"   参数形状: {p.shape}")
+                        # print(f"   所属层类型: {p.__class__.__name__}")
+                        # print(f"   关联的网络层可能为: {'Embedding' if 'embedding' in p.name.lower() else '其他层'}")
                         # ================================
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"

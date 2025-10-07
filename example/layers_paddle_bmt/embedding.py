@@ -48,7 +48,7 @@ class Embedding(bmt.DistributedModule):
                 dtype=_weight.dtype,
                 default_initializer=paddle.nn.initializer.Assign(_weight)
             )
-        # print("-------------Embedding----------- 是否连续", self.weight.is_contiguous(), self.weight.dtype)
+        print("-------------Embedding----------- ", self.weight, type(self.weight))
         self.sparse = sparse
         # print("sparse-----------", sparse)
         self._add_grad_hook()

@@ -42,8 +42,8 @@ class VPEmbedding(bmt.DistributedModule):
         #     tp_split_dim=0,
         #     tp_mode=True,
         # )
-        print("-------------------------embedding_size, self.vocab_size_per_partition",
-              embedding_size, self.vocab_size_per_partition)
+        # print("-------------------------embedding_size, self.vocab_size_per_partition",
+        #       embedding_size, self.vocab_size_per_partition)
         self.weight = paddle.create_parameter(shape=[embedding_size, self.vocab_size_per_partition], dtype=dtype,
             default_initializer=paddle.nn.initializer.XavierNormal())
 

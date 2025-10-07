@@ -31,12 +31,15 @@ class OpLinear(paddle.autograd.PyLayer):
             .t()
             .matmul(grad_output.reshape([-1, grad_output.shape[-1]]))
         )
-        # print(f"-----------------OpLinear backward------------------------ {grad_output.shape} {x.shape}")
+        # print(f"-------111----------OpLinear backward------------------------ {grad_output.shape} {x.shape}")
         # print(f"------------------- {grad_output.reshape([-1, grad_output.shape[-1]]).t()}")
         if bias is not None:
             #  and bias.requires_grad
             grad_bias = grad_output.reshape([-1, grad_output.shape[-1]]).sum(0)
-        return grad_x, grad_weight, grad_bias
+        if bias is not None:
+            return grad_x, grad_weight, grad_bias
+        else:
+            return grad_x, grad_weight
 
 
 class Linear(bmt.DistributedModule):

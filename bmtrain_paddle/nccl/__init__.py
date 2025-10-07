@@ -128,8 +128,8 @@ def allReduce(
     sendbuff = tensor_to_c_ptr(src)
     recvbuff = tensor_to_c_ptr(dst)
 
-    # print(f"src_ptr: {hex(sendbuff)}")  # （如0x7f8a5c000000）
-    # print(f"dst_ptr: {hex(recvbuff)}")  # 应为非零地址
+    # print(f"src_ptr: {hex(sendbuff)}")
+    # print(f"dst_ptr: {hex(recvbuff)}")
     # print("src.shape == dst.shape", src.shape, dst.shape, src.size, dst.size)
     assert src.size == dst.size, "Buffer size not aligned"
     # print("------------nccl all reduce--------------", count,
@@ -158,8 +158,8 @@ def send(src : paddle.Tensor,
             comm (NCCLCommunicator): NCCL communicator.
     """
 
-    sendbuff = src._ptr()
-    count = src.numel()
+    sendbuff = tensor_to_c_ptr(src)
+    count = src.numel().item()
     datatype = dtype2nccl(src.dtype)
     C.ncclSend(
         sendbuff,

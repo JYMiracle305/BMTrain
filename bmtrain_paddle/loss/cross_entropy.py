@@ -30,7 +30,7 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
         
     @staticmethod
     def backward(ctx, grad_output : paddle.Tensor):
-        print(f"~~~~~~~~~~~~~~~~OpFusedCrossEntropy grad_output~~~~~~~~~~~~~~~~~~~~~~~ {grad_output}")
+        # print(f"~~~~~~~~~~~~~~~~OpFusedCrossEntropy grad_output~~~~~~~~~~~~~~~~~~~~~~~ {grad_output}")
         grad_output = grad_output.contiguous()
         softmax, target = ctx.saved_tensor()
         F.cross_entropy_backward_inplace(
@@ -39,7 +39,7 @@ class OpFusedCrossEntropy(paddle.autograd.PyLayer):
             softmax,
             ctx.ignore_index,
         )
-        return (softmax, None)
+        return softmax
 
 class VPFusedCrossEntropy(paddle.autograd.PyLayer):
     @staticmethod
@@ -258,12 +258,12 @@ class FusedCrossEntropy(paddle.nn.Layer):
 
     def forward(self, input: paddle.Tensor, target: paddle.Tensor) -> paddle.Tensor:
         if self.parallel:
-            print("-----------------------FusedCrossEntropy self.parallel input", input)
+            # print("-----------------------FusedCrossEntropy self.parallel input", input)
             ret = VPFusedCrossEntropy.apply(input, target.astype(paddle.int64))
         else:
             if input.dtype == paddle.float32:
-                print("标签最大值:", paddle.max(target).item())
-                print("标签最小值:", paddle.min(target).item())
+                # print("标签最大值:", paddle.max(target).item())
+                # print("标签最小值:", paddle.min(target).item())
                 return paddle.nn.functional.cross_entropy(
                         input, 
                         # target.astype(paddle.int64),
@@ -283,11 +283,12 @@ class FusedCrossEntropy(paddle.nn.Layer):
         else:
             w = (target != self.ignore_index).astype(paddle.int64)
 
-        ret = w * ret
+        # ret = w * ret
         
         if self.reduction == "none":
             return ret
         elif self.reduction == "sum":
             return ret.sum()
         elif self.reduction == "mean":
-            return ret.sum() / w.sum().astype('float32')
+            # return ret.sum() / w.sum().astype('float32')
+            return ret.mean().astype(paddle.float32)

@@ -189,7 +189,8 @@ class OpAllReduce(paddle.autograd.PyLayer):
             input = input.contiguous()
         if input._offset() != 0 or input.numel().item() != input.size:
             input = input.clone()
-        output = paddle.empty(input.numel(), dtype=input.dtype)
+        output = paddle.empty(input.shape, dtype=input.dtype)
+        # print(" input, output,", input.shape, output.shape, input.size, output.size)
         if input.place.is_gpu_place():
             output = output.cuda()
 

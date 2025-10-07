@@ -102,7 +102,7 @@ class OptimManager:
         """
         loss = self.scale_loss(loss)
         loss.stop_gradient = False
-        print("--------------loss backward--------------", loss)
+        # print("--------------loss backward--------------", loss)
         loss.backward()
         # some reduce ops of distributed parameter were launched on load stream
         current_stream = paddle.device.cuda.current_stream()
@@ -170,16 +170,16 @@ class OptimManager:
                 return
         for optimizer, lr_scheduler in zip(self.optimizers, self.lr_schedulers):
             if hasattr(optimizer, "_bmtrain_optimizer") and optimizer._bmtrain_optimizer:
-                print("optimizer.step(scale=self.loss_scale)")
+                # print("optimizer.step(scale=self.loss_scale)")
                 optimizer.step(scale=self.loss_scale)
             else:
                 if self.loss_scale_enabled:
                     grad_rescale(optimizer._param_groups, self.loss_scale)
-                print("optimizer.step()")
+                # print("optimizer.step()")
                 optimizer.step()
 
             if lr_scheduler is not None:
-                print("---------lr_scheduler.step()-----")
+                # print("---------lr_scheduler.step()-----")
                 lr_scheduler.step()
 
         if self.loss_scale_enabled:
@@ -216,15 +216,15 @@ class OptimManager:
 
         if norm_type == 'inf':
             total_norm_cuda = max(g.data.abs().max() for g in grads).detach()
-            nccl.allReduce(total_norm_cuda.storage(), total_norm_cuda.storage(), "max", config["comm"])
+            nccl.allReduce(total_norm_cuda, total_norm_cuda, "max", config["comm"])
             total_norm = total_norm_cuda
         else:
             norm_type = float(norm_type)
-            total_norm_cuda = paddle.device.cuda.FloatTensor([0])
+            total_norm_cuda = paddle.to_tensor([0], dtype=paddle.float32)
             for index, g in enumerate(grads):
-                param_norm = g.data.float().norm(norm_type)
+                param_norm = g.data.astype(paddle.float32).norm(norm_type)
                 total_norm_cuda += param_norm ** norm_type
-            nccl.allReduce(total_norm_cuda.storage(), total_norm_cuda.storage(), "sum", config["comm"])
+            nccl.allReduce(total_norm_cuda, total_norm_cuda, "sum", config["comm"])
             total_norm = total_norm_cuda[0] ** (1. / norm_type)
         # total_norm = total_norm / scale
         # clip_coef = float(max_norm) / (total_norm + eps)
@@ -232,7 +232,8 @@ class OptimManager:
         if clip_coef < 1:
             for p in parameters:
                 if p.grad is not None:
-                    p.grad.data.mul_(clip_coef)
+                    # p.grad.data.mul_(clip_coef)
+                    p.grad = p.grad * (clip_coef.astype(p.grad.dtype))
         return total_norm / scale
 
     @paddle.no_grad()

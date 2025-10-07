@@ -22,5 +22,5 @@ export NCCL_P2P_DISABLE=1
 export CUDA_LAUNCH_BLOCKING=1
 export LD_LIBRARY_PATH=$NCCL_HOME/lib:$LD_LIBRARY_PATH
 python -m paddle.distributed.launch \
-       --gpus=8,9 \
+       --gpus=8,9  \
       ./train_by_paddle_multi.py

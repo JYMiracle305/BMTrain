@@ -69,7 +69,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
         delta = new_scale / old_scale
         for group in self._param_groups:
             for p in group["params"]:
-                print("_on_justify_scale ------", self._accumulators.keys()) 
+                # print("_on_justify_scale ------", self._accumulators.keys()) 
                 if p in self._accumulators:
                     state = self._accumulators[p]
                     if len(state) > 0:
@@ -107,9 +107,10 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
         # update parameters
         for group in self._param_groups:
             for p in group["params"]:
-        # for p in self._param_groups:
-                # print("------p.name-------", p.name, p.grad, p.stop_gradient)
                 if p.grad is not None and not p.stop_gradient:
+                    if not p.grad.is_contiguous():
+                        p.grad = p.grad.contiguous()
+                    # print(f"------p.name----, {p.name}, 原始参数：{p}, 梯度：{p.grad}---")
                     if p.grad.is_sparse():
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
@@ -149,7 +150,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                         grad = -p.grad
                     else:
                         grad = p.grad
-                    # grad = p.grad
+
                     if p.dtype == paddle.float32:
                         other_kwargs = {}
                         if (
@@ -195,7 +196,7 @@ class AdamOptimizer(paddle.optimizer.Optimizer):
                             self.weight_decay,
                             state["step"],
                         )
-        print("adam step ok----------")
+        # print("adam step ok----------")
         return loss
 
     def get_avg_delta():

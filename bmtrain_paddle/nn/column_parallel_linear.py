@@ -73,7 +73,7 @@ class ColumnParallelLinear(bmt.DistributedModule):
             self.bias = None
 
     def forward(self, input):
-        print("--------------------------ColumnParallelLinear forward--------------------------")
+        # print("--------------------------ColumnParallelLinear forward--------------------------")
         gather_input = self.gather_input
         split_input = False
         reduce_output_type = None
