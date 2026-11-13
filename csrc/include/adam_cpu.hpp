@@ -523,11 +523,15 @@ void adam_cpu_fp16_launcher(
     auto param_fp16_ptr = reinterpret_cast<uint16_t*>(param_fp16);
     auto g_fp16_ptr  = reinterpret_cast<uint16_t*>(g_fp16);
     int cpu_level = get_cpu_level();
+    // printf("adam_cpu_fp16_launcher");
     if (cpu_level == 0 ){
+        // printf("adam_cpu_fp16_launcher 0");
         adam_cpu_0(n, param_fp32_ptr, param_fp16_ptr, delta_info_ptr, g_fp16_ptr, m_fp32_ptr, v_fp32_ptr, beta1, beta2, eps, lr, scale, weight_decay, bias_correction1, bias_correction2);
     }else if(cpu_level == 1){
+        // printf("adam_cpu_fp16_launcher 1");
         adam_cpu_1(n, param_fp32_ptr, param_fp16_ptr, delta_info_ptr, g_fp16_ptr, m_fp32_ptr, v_fp32_ptr, beta1, beta2, eps, lr, scale, weight_decay, bias_correction1, bias_correction2);
     }else{
+        // printf("adam_cpu_fp16_launcher 2");
         adam_cpu_2(n, param_fp32_ptr, param_fp16_ptr, delta_info_ptr, g_fp16_ptr, m_fp32_ptr, v_fp32_ptr, beta1, beta2, eps, lr, scale, weight_decay, bias_correction1, bias_correction2);
     }
 }

@@ -14,7 +14,7 @@ def main():
 
     model = GPT(
         num_layers=8,
-        vocab_size=10240, 
+        vocab_size=10240,
         dim_model=2560,
         dim_head=80,
         num_heads=32,
@@ -37,7 +37,7 @@ def main():
     batch_size = 2
     seq_len = 512
     world_size = bmt.config["world_size"] if bmt.config["tp_size"] == 1 else bmt.config["tp_zero_size"]
-    r = bmt.config["rank"] if bmt.config["tp_size"] == 1 else bmt.config["tp_zero_rank"] 
+    r = bmt.config["rank"] if bmt.config["tp_size"] == 1 else bmt.config["tp_zero_rank"]
 
     for i in range(world_size):
         sent = torch.randint(0, 10240, (batch_size, seq_len + 1))
@@ -53,7 +53,7 @@ def main():
 
         if i == r:
             break
-    
+
     if config['tp_size'] > 1:
         loss_func = bmt.loss.FusedCrossEntropy(ignore_index=-100, parallel=True)
     else:
@@ -66,11 +66,11 @@ def main():
     optim_manager.add_optimizer(optimizer, lr_scheduler)
 
     bmt.synchronize()
-    
+
     avg_time_recorder = bmt.utils.AverageRecorder()
     avg_loss_recorder = bmt.utils.AverageRecorder()
 
-    for iteration in range(1000):
+    for iteration in range(1):
         # load data
         st = time.time()
 
@@ -84,16 +84,17 @@ def main():
             batch, seq_len, vocab_out_size = logits.size()
 
             if config['tp_size'] > 1:
+                print("------------logits dtype--------------", logits)
                 loss = loss_func(logits.view(batch * seq_len, vocab_out_size), targets.view(batch * seq_len))
             else:
                 loss = loss_func(logits.float().view(batch * seq_len, vocab_out_size), targets.view(batch * seq_len))
-        
+
             global_loss = bmt.sum_loss(loss).item()
 
             optim_manager.zero_grad()
 
             optim_manager.backward(loss)
-        
+
         # print inspected tensors in the forward & backward pass
         # print parameters of the model
         if iteration % 100 == 0:
@@ -131,7 +132,7 @@ def main():
         # save model
         if iteration % 1000 == 0:
             bmt.save(model, "ckpt-%d.pt" % iteration)
-    
+
     bmt.save(model, "checkpoint.pt")
 
 if __name__ == '__main__':

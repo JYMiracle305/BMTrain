@@ -27,7 +27,7 @@ def is_ninja_available():
 
 
 class CMakeBuild(build_ext):
- 
+
     def build_extension(self, ext):
         extdir = os.path.abspath(os.path.dirname(self.get_ext_fullpath(ext.name)))
 
@@ -87,12 +87,12 @@ class CMakeBuild(build_ext):
         cmake_args += ["-DPython_ROOT_DIR=" + os.path.dirname(os.path.dirname(sys.executable))]
         subprocess.check_call(["cmake", ext.sourcedir] + cmake_args, cwd=build_temp)
         subprocess.check_call(["cmake", "--build", "."] + build_args, cwd=build_temp)
-        
+
 ext_modules = [
-    CMakeExtension("bmtrain.C"),
+    CMakeExtension("bmtrain_paddle.C"),
 ]
 setup(
-    name='bmtrain',
+    name='bmtrain_paddle',
     version='1.0.0',
     author="Guoyang Zeng",
     author_email="qbjooo@qq.com",
@@ -100,11 +100,9 @@ setup(
     packages=find_packages(),
     install_requires=[
         "numpy",
-		"nvidia-nccl-cu11>=2.14.3"
     ],
     setup_requires=[
         "pybind11",
-        "nvidia-nccl-cu11>=2.14.3"
     ],
     ext_modules=ext_modules,
     cmdclass={

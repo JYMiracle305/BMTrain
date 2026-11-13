@@ -8,10 +8,10 @@ from bmtrain.nn import (
 )
 import math
 from bmtrain.global_var import config
-from bmtrain.distributed import all_gather 
+from bmtrain.distributed import all_gather
 
 class Attention(bmt.DistributedModule):
-    def __init__(self, 
+    def __init__(self,
             dim_model : int, dim_head : int,
             num_heads : int, bias : bool = True,
             dtype = None
@@ -34,8 +34,8 @@ class Attention(bmt.DistributedModule):
         self.num_heads = num_heads
         self.dim_head = dim_head
         self.dim_model = dim_model
-    
-    def forward(self, 
+
+    def forward(self,
             hidden_q : torch.Tensor,        # (batch_size, seq_q, dim_model)
             hidden_kv : torch.Tensor,       # (batch_size, seq_kv, dim_model)
             mask : torch.BoolTensor,        # (batch_size, seq_q, seq_kv)
@@ -84,7 +84,7 @@ class Attention(bmt.DistributedModule):
 
         if position_bias is not None:
             score = score + position_bias.view(batch_size, -1, seq_q, seq_kv)
-         
+
         score = torch.where(
             mask.view(batch_size, 1, seq_q, seq_kv),
             score,
@@ -98,21 +98,24 @@ class Attention(bmt.DistributedModule):
         )
 
         score = score.view(-1, seq_q, seq_kv)
-
         h_out = torch.bmm(
             score, h_v
         )
+        # print(f"before self.project_out {h_out.size()}")
         h_out = h_out.view(batch_size, -1, seq_q, self.dim_head)
+        # print(f"before self.project_out {h_out.size()}")
         h_out = h_out.permute(0, 2, 1, 3).contiguous()
+        # print(f"before self.project_out {h_out.size()}")
         h_out = h_out.view(batch_size, seq_q, -1)
+
         if config['tp_size'] > 1:
-            h_out = h_out.view(h_out.shape[0] * bmt.config["tp_size"], -1, h_out.shape[-1]) 
+            h_out = h_out.view(h_out.shape[0] * bmt.config["tp_size"], -1, h_out.shape[-1])
 
         attn_out = self.project_out(h_out)
 
         return attn_out
-        
 
-        
+
+
 
 

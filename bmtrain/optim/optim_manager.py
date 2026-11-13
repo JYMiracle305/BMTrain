@@ -17,6 +17,7 @@ def check_overflow(param_groups):
     if "comm" in config:
         nccl.allReduce(has_inf_or_nan.storage(), has_inf_or_nan.storage(), "max", config["comm"])
 
+    print(f"check_overflow {has_inf_or_nan}")
     if has_inf_or_nan > 0:
         raise OverflowError("Gradient overflow")
 

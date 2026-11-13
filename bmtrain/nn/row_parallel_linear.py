@@ -39,6 +39,7 @@ class RowParallelLinear(bmt.DistributedModule):
         tp_size = config["tp_size"]
         assert in_features % tp_size == 0
         self.in_features_per_partition = in_features // tp_size
+        print(f"RowParallelLinear out_features {self.out_features} in_features_per_partition {self.in_features_per_partition}")
         self.weight = bmt.DistributedParameter(
             torch.empty(
                 self.out_features,
@@ -50,6 +51,7 @@ class RowParallelLinear(bmt.DistributedModule):
             tp_split_dim=1,
             tp_mode=True,
         )
+        print(f"RowParallelLinear self.weight {self.weight.size()}")
         if bias:
             self.bias = bmt.DistributedParameter(
                 torch.empty(self.out_features, dtype=dtype, device="cuda"),

@@ -2,16 +2,20 @@ cmake_minimum_required(VERSION 3.18)
 project(bmtrain)
 enable_language(C)
 enable_language(CXX)
-set(CMAKE_CUDA_ARCHITECTURES "61;62;70;72;75;80")
+if(NOT DEFINED CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_ARCHITECTURES "80")
+endif()
 enable_language(CUDA)
 set(CMAKE_CXX_STANDARD 14)
 set(CMAKE_CXX_STANDARD_REQUIRED True)
 set(CMAKE_CUDA_STANDARD 14)
 set(CMAKE_CUDA_STANDARD_REQUIRED True)
 
-set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode=arch=compute_61,code=sm_61 -gencode=arch=compute_62,code=sm_62 -gencode=arch=compute_70,code=sm_70 -gencode=arch=compute_72,code=sm_72 -gencode=arch=compute_75,code=sm_75 -gencode=arch=compute_80,code=sm_80")
+foreach(cuda_arch IN LISTS CMAKE_CUDA_ARCHITECTURES)
+    set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode=arch=compute_${cuda_arch},code=sm_${cuda_arch}")
+endforeach()
 
-if(NOT DEFINED ENV{BUILD_DOCKER_ENV} OR "$ENV{BUILD_DOCKER_ENV}" STREQUAL "0")
+if((NOT DEFINED ENV{BUILD_DOCKER_ENV} OR "$ENV{BUILD_DOCKER_ENV}" STREQUAL "0") AND NOT "86" IN_LIST CMAKE_CUDA_ARCHITECTURES)
     set(CMAKE_CUDA_FLAGS "${CMAKE_CUDA_FLAGS} -gencode=arch=compute_86,code=sm_86")
     set(AVX_FLAGS "${AVX_FLAGS} -march=native")
 else()
@@ -54,7 +58,7 @@ target_include_directories(C PRIVATE ${NCCL_INCLUDE_DIRS})
 target_compile_definitions(C
     PRIVATE VERSION_INFO=${EXAMPLE_VERSION_INFO})
 
-set_target_properties(C PROPERTIES CUDA_ARCHITECTURES "61;62;70;72;75;80")
+set_target_properties(C PROPERTIES CUDA_ARCHITECTURES "${CMAKE_CUDA_ARCHITECTURES}")
 
 target_include_directories(C
     PRIVATE "csrc/include"

@@ -17,9 +17,11 @@ class GPT(bmt.DistributedModule):
         if config["tp_size"] > 1:
             self.word_emb = bmt.nn.VPEmbedding(vocab_size, dim_model, dtype=dtype)
         else:
+            print("word_emb Embedding", vocab_size, dim_model)
             self.word_emb = Embedding(vocab_size, dim_model, dtype=dtype)
+        print("pos_emb Embedding", max_distance, dim_model)
         self.pos_emb = Embedding(max_distance, dim_model, dtype=dtype)
-        
+
         if config['pipe_size'] > 1:
             self.transformers = bmt.PipelineTransformerBlockList([
                 bmt.Block(
@@ -52,12 +54,15 @@ class GPT(bmt.DistributedModule):
         mask_2d = mask_2d & (pos[:, None, :] >= pos[:, :, None])
         if config["tp_size"] > 1:
             input = input.chunk(config["tp_size"], dim=1)[config["tp_rank"]]
-            pos = pos.chunk(config["tp_size"], dim=1)[config["tp_rank"]]    
+            pos = pos.chunk(config["tp_size"], dim=1)[config["tp_rank"]]
         out = self.pos_emb(pos) + self.word_emb(input)
-
+        # print("~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~self.pos_emb(pos) + self.word_emb(input)", out.size())
         # for layer in self.transformers:
         out = self.transformers(out, mask_2d, None)
+
+        # print("after self.transformers", out.size())
         out = self.layernorm(out)
+        # print("before self.word_emb(out, projection=True)", out.size())
         logits = self.word_emb(out, projection=True)
         bmt.inspect.record_tensor(logits, "logits")
 

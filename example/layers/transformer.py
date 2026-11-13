@@ -11,11 +11,12 @@ class TransformerEncoder(bmt.DistributedModule):
         super().__init__()
 
         self.ln_attn = Layernorm(dim_model, dtype=dtype)
+        print("before Attention--------------", dim_model, dim_head, num_heads, bias, dtype)
         self.attn = Attention(dim_model, dim_head, num_heads, bias=bias, dtype=dtype)
 
         self.ln_ff = Layernorm(dim_model, dtype=dtype)
         self.ff = Feedforward(dim_model, dim_ff, bias=bias, dtype=dtype)
-    
+
     def forward(self,
             hidden : torch.Tensor,      # (batch, seq_len, dim_model)
             mask : torch.BoolTensor,    # (batch, seq_len, dim_model)
@@ -31,4 +32,4 @@ class TransformerEncoder(bmt.DistributedModule):
         hidden = hidden + x.view_as(hidden)
 
         return hidden
-    
+

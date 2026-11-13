@@ -1,0 +1,2 @@
+from .cross_entropy import FusedCrossEntropy
+from .cross_entropy import VPFusedCrossEntropy

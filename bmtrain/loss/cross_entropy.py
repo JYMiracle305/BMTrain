@@ -22,7 +22,7 @@ class OpFusedCrossEntropy(torch.autograd.Function):
         ctx.ignore_index = ignore_index
         ctx.save_for_backward(softmax, target)
         return out # float tensor
-        
+
     @staticmethod
     def backward(ctx, grad_output : torch.Tensor):
         grad_output = grad_output.contiguous()
@@ -82,7 +82,6 @@ class VPFusedCrossEntropy(torch.autograd.Function):
 
         # Normalize
         ctx.save_for_backward(softmax, target_mask, masked_target_1d)
-
         return loss
 
     @staticmethod
@@ -101,6 +100,7 @@ class VPFusedCrossEntropy(torch.autograd.Function):
         softmax_update = 1.0 - target_mask.view(-1).float()
 
         grad_2d[arange_1d, masked_target_1d] -= softmax_update
+
         grad_input.mul_(grad_output.view(*grad_input.shape[:-1]).unsqueeze(dim=-1))
 
         return grad_input, None
@@ -229,14 +229,15 @@ class FusedCrossEntropy(torch.nn.Module):
 
     def forward(self, input: torch.Tensor, target: torch.Tensor) -> torch.Tensor:
         if self.parallel:
+            print("---------------VPFusedCrossEntropy.apply--------------", input)
             ret = VPFusedCrossEntropy.apply(input, target.long())
         else:
             if input.dtype == torch.float32:
                 return torch.nn.functional.cross_entropy(
-                        input, 
+                        input,
                         target.long(),
-                        weight=self.weight, 
-                        ignore_index=self.ignore_index, 
+                        weight=self.weight,
+                        ignore_index=self.ignore_index,
                         reduction=self.reduction,
                         label_smoothing=self.label_smoothing)
 
@@ -251,7 +252,7 @@ class FusedCrossEntropy(torch.nn.Module):
             w = (target != self.ignore_index).int()
 
         ret = w * ret
-        
+
         if self.reduction == "none":
             return ret
         elif self.reduction == "sum":

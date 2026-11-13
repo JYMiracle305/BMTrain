@@ -72,6 +72,9 @@ class AdamOptimizer(torch.optim.Optimizer):
         for group in self.param_groups:
             for p in group["params"]:
                 if p.grad is not None and p.requires_grad:
+                    # print(f"------p.name----, {p.name}")
+                    # print(f"原始参数：{p}, 梯度：{p.size()}---")
+                    # print(f"梯度：{p.grad}, shape:{p.grad.size()}---")
                     if p.grad.is_sparse:
                         raise RuntimeError(
                             "Adam does not support sparse gradients, please consider SparseAdam instead"
@@ -80,7 +83,6 @@ class AdamOptimizer(torch.optim.Optimizer):
                         raise RuntimeError(
                             "Adam only supports fp32, fp16 and bf16 gradients"
                         )
-
                     state = self.state[p]
                     # Lazy state initialization
                     if len(state) == 0:
